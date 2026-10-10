@@ -98,9 +98,10 @@
     </select>
   </label>
   <label><input type="checkbox" id="draggable" checked> 可拖拽</label>
+  <label><input type="checkbox" id="setup"> 配置面板</label>
   <button id="toggle">打开 / 收起</button>
   <span class="sep"></span>
-  <button id="btnSetup">配置模型</button>
+  <button id="btnSetup" hidden>配置模型</button>
   <button id="btnKeys">快捷键</button>
   <button id="btnHistory">历史与记忆</button>
   <button id="btnNew">新对话</button>
@@ -108,7 +109,6 @@
   <span class="gap"></span>
   <span>transport = demo（纯前端模拟，无后端请求） · 试试 <b>Ctrl/⌘ + K</b></span>
 </div>
-
 <header class="site">
   <span class="logo">野径</span>
   <nav>
@@ -163,7 +163,7 @@
       <li><strong>知识库引用</strong>：模拟的回复里带了检索到的资料，回复下方会出现可展开的「参考资料」。</li>
       <li><strong>快捷键</strong>：<code>Ctrl/⌘ + K</code> 开合助手，<code>Ctrl/⌘ + /</code> 打开快捷键表（挂件绑的和系统默认的都在里面），<code>Alt + ↑↓</code> 切会话，<code>↑</code> 在空输入框里取回上一条提问。焦点在页面顶部的搜索框里时这些键不会被抢走，<code>Ctrl+C/X/V/A/Z</code> 这类系统键挂件碰都不碰。</li>
       <li><strong>离线</strong>：把 DevTools 的 Network 调成 Offline（或拔网线），再问一句「怎么冲」——状态栏变成「离线」，它一个请求都不发就本地作答，并标上「离线应答」。问一个它没准备答案的，它会说明情况并记住，恢复联网后自动补发。</li>
-      <li><strong>配置模型</strong>：点「配置模型」（或标题栏的齿轮），选服务商、填你自己的 key，点「测试连接」会真的发一个最小请求过去验证。保存后立刻生效，不用刷新；「清除配置」回到演示模式。密钥只写进这台设备的浏览器——公开站点上请把 <code>setup</code> 关掉（默认就是关的）。</li>
+      <li><strong>配置模型</strong>：<strong>默认是关的</strong>——挂件里不带任何配置入口，密钥也不会落到访客浏览器里。想看的话勾上控制条的「配置面板」，或在地址后加 <code>?setup=1</code>。打开后可以选服务商、填你自己的 key，点「测试连接」会真的发一个最小请求验证，保存立刻生效、不用刷新。密钥只写进这台设备的浏览器，公开站点请保持默认关闭。</li>
     </ul>
   </div>
 </main>
@@ -285,9 +285,9 @@
     },
     storage: 'local',                  // 会话与记忆跨刷新保留
     storageKey: 'waa-demo',
-    // 演示页把配置面板打开，你可以当场选服务商、填自己的 key 试真模型。
-    // 公开站点上必须关掉它（默认就是关的），否则访客能往里填、也能看到配置入口。
-    setup: true,
+    // 配置面板默认关（挂件的默认值也是 false）。想看的话勾上控制条的「配置面板」，
+    // 或在这个页面地址后面加 ?setup=1。公开站点上永远不要打开它。
+    setup: false,
     model: 'demo'
   };
 
@@ -295,17 +295,25 @@
     theme: document.getElementById('theme'),
     accent: document.getElementById('accent'),
     position: document.getElementById('position'),
-    draggable: document.getElementById('draggable')
+    draggable: document.getElementById('draggable'),
+    setup: document.getElementById('setup')
   };
+
+  // ?setup=1 也能打开，方便直接甩一条链接给别人看
+  var wantsSetup = new URLSearchParams(location.search).get('setup') === '1';
+  if (wantsSetup) ui.setup.checked = true;
 
   var widget = null;
   function rebuild(open) {
     if (widget) widget.destroy();
+    var setupOn = wantsSetup || ui.setup.checked;
+    document.getElementById('btnSetup').hidden = !setupOn;
     widget = WebAIAssistant.mount(Object.assign({}, BASE, {
       theme: ui.theme.value,
       accent: ui.accent.value,
       position: ui.position.value,
       draggable: ui.draggable.checked,
+      setup: setupOn,
       // 把访客的关注点记下来，作为「记忆」在后续每次请求里带上
       onAfterSend: function (p) {
         var q = (p.messages.filter(function (m) { return m.role === 'user'; }).slice(-1)[0] || {}).content || '';
@@ -321,7 +329,7 @@
 
   rebuild(true);
 
-  ['theme', 'accent', 'position', 'draggable'].forEach(function (k) {
+  ['theme', 'accent', 'position', 'draggable', 'setup'].forEach(function (k) {
     ui[k].addEventListener('change', function () { rebuild(true); });
   });
   document.getElementById('toggle').addEventListener('click', function () {

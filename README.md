@@ -124,7 +124,7 @@ WebAIAssistant.mount({ provider: 'deepseek', apiKey: '…' });
 
 **在界面上直接配。** 打开 `setup: true`，挂件里会多一个齿轮：选服务商、填 key、点「测试连接」（真的发一个最小请求过去验证），保存立刻生效、不用刷新。本机开发、内网工具、给同事试用时很省事。
 
-**它是默认关的**（`setup: false`），别在公开站点上打开——访客会看到一个配置入口，而且只要浏览器里存过 key，这个域下任何脚本都能读到。居中一点的选法是 `setup: 'auto'`：只有检测到「用了服务商预设但没填 key」时才显示入口。演示页就开着它，你可以当场填自己的 key 试真模型。
+**它是默认关的**（`setup: false`），别在公开站点上打开——访客会看到一个配置入口，而且只要浏览器里存过 key，这个域下任何脚本都能读到。居中一点的选法是 `setup: 'auto'`：只有检测到「用了服务商预设但没填 key」时才显示入口。演示页也保持默认关闭，想看的话在地址后加 `?setup=1`。
 
 ## 校验器
 
@@ -275,7 +275,7 @@ WebAIAssistant.mount({ provider: 'deepseek', apiKey: '…' });
 
 **Or configure it in the UI.** Turn on `setup: true` and the widget grows a gear: pick a provider, paste a key, hit "Test connection" (it really fires a minimal request to check), and the change applies immediately without a reload. Handy for local work, internal tools, and letting a colleague try it.
 
-**It's off by default** (`setup: false`) — don't turn it on for a public site. Visitors would see a config entry point, and once a key is in the browser, any script on that origin can read it. `setup: 'auto'` is the middle ground: the entry point only appears when the widget detects a provider preset with no key. The live demo has it on, so you can paste your own key and try a real model.
+**It's off by default** (`setup: false`) — don't turn it on for a public site. Visitors would see a config entry point, and once a key is in the browser, any script on that origin can read it. `setup: 'auto'` is the middle ground: the entry point only appears when the widget detects a provider preset with no key. The demo keeps it off too; add `?setup=1` to the URL if you want to see it.
 
 ## Checker
 

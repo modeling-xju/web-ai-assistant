@@ -2342,6 +2342,10 @@
     if (this._hotTimer) clearInterval(this._hotTimer);
     if (this._teardownDrag) this._teardownDrag();
     if (this.host && this.host.parentNode) this.host.parentNode.removeChild(this.host);
+    // 从 instances 里摘掉：SPA 里反复 mount/destroy（比如切换主题）会一直往数组里堆，
+    // 而且 instances[0] 会一直是那个早就销毁的实例，排查时非常容易被带偏。
+    var i = instances.indexOf(this);
+    if (i !== -1) instances.splice(i, 1);
   };
 
   Widget.prototype.setExtraInfo = function (info) {
