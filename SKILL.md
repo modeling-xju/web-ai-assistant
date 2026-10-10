@@ -88,7 +88,7 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 | "要能记住用户" | 用 `widget.remember({...})` 写入，随请求自动带上。该记稳定事实，别记临时状态 |
 | "要热词 / 热门问题" | `hotWords` 静态兜底 + `hotWordsUrl` 从后端拉（`{items:[...]}`），见 `references/self-hosted-widget.md` |
 | "要接知识库 / 要能引用资料" | 挂件负责**显示**引用、**下发**配置；检索在你自己后端做。见 `self-hosted-widget.md` 的「知识库与引用」 |
-| "要能按快捷键唤起" | 默认就有：`mod+K` 开合、`mod+/` 看快捷键表、`Alt+↑↓` 切会话。要改传 `hotkeys`，整块关掉传 `shortcuts: false` |
+| "要能按快捷键唤起" | 默认就有：`mod+K` 开合、`mod+/` 看快捷键表、`Alt+↑↓` 切会话。要改传 `hotkeys`，整块关掉传 `shortcuts: false`。**剪贴板那套（`mod+C/X/V/A/Z`）挂件不绑也不拦**——别去动它 |
 | "直接接某家大模型 API" | 用 `provider` 预设（OpenAI / 百炼 / DeepSeek / Kimi / GLM / SiliconFlow / OpenRouter / Ollama / vLLM / Anthropic）。**但先解决 key 放哪**——见下 |
 
 **关于 provider：先问 key，再写代码。** 如果用户是在做公开网站，`provider` + `apiKey` 直接写在页面里等于把 key 公开。
@@ -121,6 +121,7 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 - [ ] 配了热词的话：能拉到；**拉不到时有兜底**，不会变成一片空白。
 - [ ] 配了知识库的话：引用能显示出来，链接点得开。
 - [ ] 快捷键：`mod+K` 能开合；焦点在**站点自己的输入框**里时不被抢（用真实按键测，合成事件测不出来）。
+- [ ] 剪贴板快捷键（`mod+C/X/V/A/Z`）在输入框里照常工作，没被挂件 `preventDefault`。
 - [ ] 面板内的文字样式和站点完全一致/完全不冲突：在挂件开启前后各取一次站点某个关键元素的 `getComputedStyle`，对比无变化。
 - [ ] 断网或后端 500 时的表现是人话错误 + 重试，不是白屏、不是死转。
 - [ ] 移动端（≤400px 宽）能正常用，输入框不被键盘顶掉，面板可关闭。

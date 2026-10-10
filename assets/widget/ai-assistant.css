@@ -413,6 +413,14 @@
   color: var(--waa-muted);
 }
 
+.waa-drawer__note--quiet {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
 .waa-msg {
   display: flex;
   gap: 9px;

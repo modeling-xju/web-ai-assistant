@@ -509,6 +509,7 @@
       newChat: '新对话', history: '历史记录', hot: '热词',
       shortcuts: '快捷键', back: '返回',
       shortcutsNote: '站点自己的输入框里不会抢这些键。按 Esc 关闭。',
+      nativeNote: '复制 / 粘贴 / 剪切 / 全选 / 撤销用的是系统默认快捷键，在输入框里照常可用——挂件不碰这些键。',
       memory: '记忆', memoryEmpty: '还没有记住任何信息',
       memoryClear: '清空记忆', clearAll: '清空全部', refs: '参考资料',
       emptyTitle: '新对话', untitled: '新对话', delete: '删除', justNow: '刚刚'
@@ -520,6 +521,7 @@
       newChat: 'New chat', history: 'History', hot: 'Trending',
       shortcuts: 'Shortcuts', back: 'Back',
       shortcutsNote: 'These keys are not captured while typing in the site\u2019s own inputs. Press Esc to close.',
+      nativeNote: 'Copy / paste / cut / select-all / undo use the OS defaults and keep working in the input box — the widget never touches those keys.',
       memory: 'Memory', memoryEmpty: 'Nothing remembered yet',
       memoryClear: 'Clear memory', clearAll: 'Clear all', refs: 'Sources',
       emptyTitle: 'New chat', untitled: 'New chat', delete: 'Delete', justNow: 'just now'
@@ -700,6 +702,34 @@
     if (t === 'textarea') return true;
     if (t === 'input') return !/^(button|checkbox|radio|submit|reset|file|range|color)$/i.test(el.type || '');
     return !!el.isContentEditable;
+  }
+
+  /** 归一化组合键，用来比对"是不是撞上了保留键" */
+  function normCombo(s) {
+    var c = parseCombo(s);
+    var mods = [];
+    if (c.mod || c.ctrl || c.meta) mods.push('mod');
+    if (c.alt) mods.push('alt');
+    if (c.shift) mods.push('shift');
+    mods.sort();
+    return (mods.length ? mods.join('+') + '+' : '') + c.key;
+  }
+
+  /**
+   * 浏览器/操作系统自己管的键，挂件绝不能碰。
+   * 复制、剪切、粘贴、全选、撤销这些在输入框里必须照常工作——
+   * 一个聊天挂件把用户的 Ctrl+C 吃掉，是比少一个快捷键严重得多的事故。
+   * 用户把这些键绑到某个动作上时，我们不接受，退回默认组合键并出声警告。
+   */
+  var RESERVED = [
+    'mod+c', 'mod+x', 'mod+v', 'mod+a', 'mod+z', 'mod+shift+z', 'mod+y',
+    'mod+f', 'mod+n', 'mod+t', 'mod+w', 'mod+p', 'mod+s', 'mod+l', 'mod+r',
+    'mod+shift+n', 'mod+shift+t', 'mod+shift+w', 'mod+shift+v',
+    'mod+shift+i', 'mod+shift+j', 'mod+shift+c', 'mod+shift+delete'
+  ].map(normCombo);
+
+  function isReserved(combo) {
+    return RESERVED.indexOf(normCombo(combo)) !== -1;
   }
 
   var DEFAULTS = {
@@ -1145,10 +1175,21 @@
 
   Widget.prototype._shortcutList = function () {
     var over = this.opts.hotkeys || {};
+    var warned = false;
     return SHORTCUTS.map(function (s) {
+      var custom = over[s.id];
+      var combo = custom === false ? null : (custom || s.combo);
+      if (combo && custom && isReserved(combo)) {
+        if (!warned && global.console && console.warn) {
+          warned = true;
+          console.warn('[web-ai-assistant] hotkeys.' + s.id + ' = "' + custom +
+            '" 撞上了浏览器保留键（复制/粘贴/全选等），已忽略该覆盖，继续用默认的 "' + s.combo + '"。');
+        }
+        combo = s.combo;
+      }
       return {
         id: s.id,
-        combo: over[s.id] === false ? null : (over[s.id] || s.combo),
+        combo: combo,
         scope: s.scope,
         zh: s.zh,
         en: s.en
@@ -1581,7 +1622,8 @@
         })
       ]),
       rows,
-      h('p', { class: 'waa-drawer__note', text: this.copy.shortcutsNote })
+      h('p', { class: 'waa-drawer__note', text: this.copy.shortcutsNote }),
+      h('p', { class: 'waa-drawer__note waa-drawer__note--quiet', text: this.copy.nativeNote })
     ]));
   };
 
@@ -1852,18 +1894,49 @@
 
   /* ── 复制代码块（事件委托，避免每个块都挂监听） ───────────── */
 
+  /**
+   * 写剪贴板。navigator.clipboard 只在安全上下文（https / localhost）可用，
+   * 站点用 http 内网域名部署时它会直接不存在——那种情况下退回到
+   * 临时 textarea + execCommand，不然按钮点了没反应，用户只会以为坏了。
+   */
+  function writeClipboard(text) {
+    return new Promise(function (resolve) {
+      if (global.navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { resolve(true); }, function () { resolve(legacyCopy(text)); });
+        return;
+      }
+      resolve(legacyCopy(text));
+    });
+  }
+
+  function legacyCopy(text) {
+    var ta = null;
+    try {
+      ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = document.execCommand && document.execCommand('copy');
+      return !!ok;
+    } catch (e) {
+      return false;
+    } finally {
+      if (ta && ta.parentNode) ta.parentNode.removeChild(ta);
+    }
+  }
+
   function onCopyClick(e) {
     var btn = e.target && e.target.closest && e.target.closest('.waa-code__copy');
     if (!btn) return;
     var code = btn.getAttribute('data-copy') || '';
-    var done = function () {
-      var old = btn.textContent;
-      btn.textContent = '已复制';
+    var old = btn.textContent;
+    writeClipboard(code).then(function (ok) {
+      btn.textContent = ok ? '已复制' : '复制失败';
       setTimeout(function () { btn.textContent = old; }, 1200);
-    };
-    if (global.navigator && navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(code).then(done, function () { /* 非安全上下文下静默失败 */ });
-    }
+    });
   }
 
   /* ────────────────────────────────────────────────────────────

@@ -169,6 +169,8 @@ evals/
 
 Rebind: `hotkeys: { toggle: 'mod+shift+k', newChat: false }`; disable the whole set: `shortcuts: false`.
 
+**The widget never touches the clipboard keys.** Copy (`Ctrl/⌘+C`), cut (`+X`), paste (`+V`), select-all (`+A`) and undo (`+Z`) are left to the OS and the browser — the widget neither binds nor intercepts them. Conversely, binding one of those combos to a widget action is **rejected with a warning** and falls back to the default: a chat widget breaking the user's `Ctrl+C` is a far worse accident than missing one shortcut. Reply text stays selectable, and code blocks get their own copy button (which falls back to `execCommand` on plain-http intranet hosts).
+
 ## Design stance
 
 The widget's default look deliberately dodges the category clichés — the blue-purple gradient orb, the fat rounded bubble, the stacked shadows. It goes for ink and paper instead: hairline borders in place of shadows, color reserved exclusively for "generating" and unread indicators, and a vertical rule instead of a bubble on the assistant's side.
