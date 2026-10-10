@@ -1,16 +1,20 @@
 # web-ai-assistant
 
-给网站内嵌一个 AI 助手。覆盖两条路：接**阿里云百炼 + AppFlow** 的官方悬浮挂件，或用**零依赖自建挂件**（Shadow DOM 隔离、SSE 流式、后端 adapter 可替换）。
+**给网站内嵌一个 AI 助手。** 覆盖两条路：接**阿里云百炼 + AppFlow** 的官方悬浮挂件，或用**零依赖自建挂件**（Shadow DOM 隔离、SSE 流式、后端 adapter 可替换）。
 
 这是一个 **Agent Skill**（给 AI 编码助手用的技能包），也可以只把里面的挂件源码拿去自己用。
 
-**👉 [打开在线演示](https://modeling-xju.github.io/web-ai-assistant/)** —— 不用配后端，打开就能玩。
+[中文](README.md) · [English](README.en.md) · **在线演示 → https://modeling-xju.github.io/web-ai-assistant/**
+
+<img src="docs/hero.svg" alt="挂件动效演示：展开、发问、流式回答、显示参考资料与热词，点页面空白处收起" width="800">
+
+*展开 → 发问 → 流式回答 → 参考资料与热词 → 点页面空白处收起。点开[在线演示](https://modeling-xju.github.io/web-ai-assistant/)可以自己玩。*
 
 ---
 
 ## 它解决什么
 
-这个 skill 是从阿里云那篇《在网站上增加一个 AI 助手》的教程演化来的。原教程是一条 4 步链路（百炼建应用 → 拿凭证 → AppFlow 建助手 → 挂到网站），但**教程里真正能自动化执行的部分很少**——控制台得人点，剩下的全是"往你站里插代码"这件事，而恰恰是这件事最容易出错：
+这个 skill 是从阿里云那篇《在网站上增加一个 AI 助手》的教程演化来的。原教程是一条 4 步链路（百炼建应用 → 拿凭证 → AppFlow 建助手 → 挂到网站），但**真正能自动化执行的部分很少**——控制台得人点，剩下的全是"往你站里插代码"这件事，而恰恰是这件事最容易出错：
 
 | 常见翻车 | 后果 |
 |---|---|
@@ -20,8 +24,19 @@
 | 把 API Key 写进前端 | 静态页面是公开的，等于公开密钥 |
 | SPA 里在组件内 `init` | 路由来回，挂出好几个图标 |
 | 打包后样式表找不到 | 挂件渲染成没有样式的裸 HTML |
+| 快捷键抢了站点搜索框的 `Ctrl+K` | "你们的挂件把我网站弄坏了" |
 
-这个 skill 把这些都写进了流程和校验器里。
+这个 skill 把这些都写进了流程、校验器和挂件实现里。
+
+## 两条路
+
+<img src="docs/paths.svg" alt="两条接入路径：A 用 AppFlow 托管的挂件直连百炼；B 是自建挂件经你自己的后端代理再连任意大模型" width="820">
+
+**路径 A · 官方 AppFlow 悬浮挂件** —— 已经有百炼应用和 AppFlow 集成时走这条。前端只暴露 `integrateId` 和 `requestDomain`，API Key 不落地。
+→ `references/appflow-sdk.md`（SDK 完整 API）、`references/console-setup.md`（控制台四步）
+
+**路径 B · 自建挂件** —— 没有阿里云账号、要私有部署、要接自研模型、或想先在本地跑通时走这条。两个零依赖文件，样式跑在 Shadow DOM 里，界面只依赖一个 `transport` 契约。
+→ `references/self-hosted-widget.md`
 
 ## 挂件自带什么
 
@@ -29,26 +44,18 @@
 
 | 能力 | 说明 |
 |---|---|
-| **点外部收起** | 点面板以外的任何地方收起；面板内部、启动器、历史抽屉内部不会误关。Esc 同样有效，抽屉打开时 Esc 先关抽屉。站点自己的弹层可以放进 `outsideIgnore` 豁免 |
-| **多会话历史** | 「新对话」+ 历史抽屉：切换、删除、清空。可选 `session`（关标签页清）/ `local`（跨访问保留） |
-| **记忆** | 关于访客的稳定事实（门店、机型、偏好…）持久保存，每次请求自动作为 system 消息带上；抽屉里可见、可一键清空 |
+| **点外部收起** | 点面板以外的任何地方收起；面板内部、启动器、历史抽屉内部不会误关。站点自己的弹层可用 `outsideIgnore` 豁免 |
+| **快捷键** | `Ctrl/⌘ + K` 开合、`Ctrl/⌘ + /` 看快捷键表、`Alt + ↑↓` 切会话、`↑` 取回上一条提问。焦点在站点自己的输入框里时**不抢键**。全部可重绑 |
+| **多会话历史** | 「新对话」+ 历史抽屉：切换、删除、清空。`session` / `local` / `none` 三档存储 |
+| **记忆** | 关于访客的稳定事实持久保存，每次请求自动作为 system 消息带上；抽屉里可见、可一键清空 |
 | **热词** | 静态兜底 + 从后端拉取（`hotWordsUrl`），带热度数字，可设为常驻在输入框上方 |
-| **知识库引用** | 自动识别 `references` / `citations` / `sources` / `search_info` / `doc_references` 等常见字段，渲染成可展开的「参考资料」；也支持 `retrieve` 前端检索钩子 |
-| **样式隔离** | Shadow DOM，双向隔离。站点写 `* { box-sizing: content-box }`、`div { border: 2px dashed }` 也进不来 |
+| **大模型 API 直连** | 11 家 provider 预设（OpenAI / 百炼 / DeepSeek / Kimi / GLM / SiliconFlow / OpenRouter / Ollama / vLLM / Anthropic）。Anthropic 走单独的协议适配器 |
+| **知识库引用** | 自动识别 `references` / `citations` / `sources` / `search_info` / `doc_references`，渲染成可展开的「参考资料」；也支持 `retrieve` 前端检索钩子 |
+| **样式隔离** | Shadow DOM 双向隔离。站点写 `* { box-sizing: content-box }`、`div { border: 2px dashed }` 也进不来 |
 | **流式 + 降级** | SSE 逐字流式、可中断；后端挂了给人话错误 + 重试，不是白屏死转 |
 | **可访问性** | Esc 关窗、焦点管理、`aria-live` 播报、`prefers-reduced-motion` |
 
 配色走 CSS 自定义属性，改四个变量就能融进任何站点。检索本身不实现——挂件负责**下发知识库配置**和**显示命中的资料**，检索在你自己的后端做。
-
-## 两条路
-
-**路径 A · 官方 AppFlow 悬浮挂件**
-你已经有百炼应用和 AppFlow 集成时走这条。`integrateId` + `requestDomain` 是唯一暴露在前端的东西，API Key 不落地，最省事。
-→ 见 `references/appflow-sdk.md`（SDK 完整 API）、`references/console-setup.md`（控制台四步）
-
-**路径 B · 自建挂件**
-没有阿里云账号、要私有部署、要接自研模型、或者想先在本地跑通时走这条。`assets/widget/` 是两个零依赖文件，样式跑在 Shadow DOM 里，界面只依赖一个 `transport` 契约，换模型只改后端。
-→ 见 `references/self-hosted-widget.md`（含 FastAPI / Node 两个代理实现）
 
 ## 怎么用
 
@@ -63,7 +70,7 @@
 └── assets/ · scripts/ · evals/
 ```
 
-装好后，直接跟助手说「帮我把 AI 助手加到我们官网上」「网站上的 AI 客服报 Failed to stream content」，它就会走这套流程。
+装好后直接说「帮我把 AI 助手加到我们官网上」「网站上的 AI 客服报 Failed to stream content」，它就会走这套流程。
 
 ### 只要挂件源码
 
@@ -72,20 +79,43 @@
         data-waa
         data-transport="echo"
         data-name="小助"
-        data-suggestions="保修怎么查|能开发票吗|多久到货"></script>
+        data-hot-words="保修怎么查|能开发票吗"
+        data-suggestions="多久到货|支持退换吗"></script>
 ```
 
-`data-transport="echo"` 是**不发任何网络请求**的本地假回复，用来确认挂件本身跑通了、样式没被站点弄歪。确认无误后换成 `openai` 并指向你自己的后端：
+`data-transport="echo"` 是**不发任何网络请求**的本地假回复，用来确认挂件跑通了、样式没被站点弄歪。确认无误后接真实模型：
 
 ```html
+<!-- 本机开发 / 内网 / Ollama 这类不需要 key 的场景 -->
 <script src="/static/ai-assistant.js"
         data-waa
-        data-transport="openai"
-        data-endpoint="/api/assistant/chat"
-        data-model="qwen-plus"></script>
+        data-provider="deepseek"
+        data-model="deepseek-chat"></script>
 ```
 
-两个文件必须放同一目录（JS 按自己的 `src` 去找同名 `.css`）。
+或者用 JS 挂载，配置更全：
+
+```js
+WebAIAssistant.mount({
+  provider: 'dashscope',          // 服务商预设
+  model: 'qwen-plus',
+  name: '小助',
+  greeting: '想了解哪一款？',
+  hotWordsUrl: '/api/hot-words',  // 从后端拉热词
+  knowledge: { id: 'kb_1', topK: 4 },
+  shortcuts: true
+});
+```
+
+### ⚠ 把 key 写在浏览器里 = 公开
+
+上面只适合**本机开发、内网、或 Ollama 这类不需要 key 的场景**。放在公开网站上，任何访客按 F12 就能拿到你的 key。生产环境只有一种做法：
+
+```
+浏览器  ──►  你自己的后端（key 在这里）  ──►  大模型 API
+```
+
+后端只要把 `{messages}` 转成上游协议、把 SSE 原样转发回来即可。FastAPI / Node 两份现成实现见 `references/self-hosted-widget.md`。
 
 ## 校验器
 
@@ -100,14 +130,19 @@ bun scripts/verify-embed.mjs ./你的站点 --json    # 机器可读，有 error
 
 ```
 SKILL.md                          Agent 的执行流程与约束
-index.html                        在线演示（这个页面本身就是一份用法示例）
-hot-words.json                    演示用的热词数据（模拟后端返回）
+SKILL.en.md                       English version of SKILL.md
+README.md / README.en.md          中英文说明
+index.html                        在线演示（本身就是一份用法示例）
+hot-words.json                    演示用的热词数据
+docs/
+  hero.svg                        动效演示（纯 SVG + CSS 动画，无 JS）
+  paths.svg                       两条接入路径
 references/
   appflow-sdk.md                  AppFlow Chat SDK 完整 API
   console-setup.md                阿里云控制台四步 + 知识库（RAG）
-  self-hosted-widget.md           自建挂件架构、传输契约、后端代理实现、记忆/历史/热词/RAG
+  self-hosted-widget.md           架构、传输契约、后端代理、快捷键、provider、记忆/历史、RAG
   troubleshooting.md              按症状排查
-  design.md                       挂件的视觉决策与反"AI 味"清单
+  design.md                       视觉决策与反"AI 味"清单
 assets/
   appflow-snippet.html            路径 A 可粘贴模板
   embed-selfhosted.html           路径 B 挂载模板
@@ -115,13 +150,28 @@ assets/
 scripts/
   verify-embed.mjs                接入配置静态校验器
 evals/
-  evals.json                      三个评测用例
+  evals.json                      评测用例
   fixtures/                       评测用的站点样本
 ```
 
+## 快捷键
+
+| 按键 | 作用 |
+|---|---|
+| `Ctrl/⌘ + K` | 打开 / 收起助手 |
+| `Ctrl/⌘ + /` | 快捷键表 |
+| `Ctrl/⌘ + Shift + H` | 历史与记忆 |
+| `Ctrl/⌘ + Shift + O` | 新对话 |
+| `Esc` | 收起（抽屉打开时先关抽屉） |
+| `Alt + ↑` / `Alt + ↓` | 上一个 / 下一个会话 |
+| `Enter` / `Shift + Enter` | 发送 / 换行 |
+| `↑` | 取回上一条提问（输入框为空时） |
+
+重绑：`hotkeys: { toggle: 'mod+shift+k', newChat: false }`；整块关掉：`shortcuts: false`。
+
 ## 设计取向
 
-挂件的默认外观刻意避开了「蓝紫渐变圆球 + 大圆角气泡 + 层层阴影」这套品类陈词。改用墨与纸的取向：发丝级描边代替阴影，唯一的彩色只出现在"正在生成"和未读提示上，助手侧不用气泡而用一条竖线起头。配色走 CSS 自定义属性，改四个变量就能融进任何站点。
+挂件的默认外观刻意避开了「蓝紫渐变圆球 + 大圆角气泡 + 层层阴影」这套品类陈词。改用墨与纸的取向：发丝级描边代替阴影，唯一的彩色只出现在"正在生成"和未读提示上，助手侧不用气泡而用一条竖线起头。
 
 为什么这么做、以及哪些做法会让它一眼看出是拼出来的，写在 `references/design.md`。
 

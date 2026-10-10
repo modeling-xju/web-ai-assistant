@@ -88,6 +88,13 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 | "要能记住用户" | 用 `widget.remember({...})` 写入，随请求自动带上。该记稳定事实，别记临时状态 |
 | "要热词 / 热门问题" | `hotWords` 静态兜底 + `hotWordsUrl` 从后端拉（`{items:[...]}`），见 `references/self-hosted-widget.md` |
 | "要接知识库 / 要能引用资料" | 挂件负责**显示**引用、**下发**配置；检索在你自己后端做。见 `self-hosted-widget.md` 的「知识库与引用」 |
+| "要能按快捷键唤起" | 默认就有：`mod+K` 开合、`mod+/` 看快捷键表、`Alt+↑↓` 切会话。要改传 `hotkeys`，整块关掉传 `shortcuts: false` |
+| "直接接某家大模型 API" | 用 `provider` 预设（OpenAI / 百炼 / DeepSeek / Kimi / GLM / SiliconFlow / OpenRouter / Ollama / vLLM / Anthropic）。**但先解决 key 放哪**——见下 |
+
+**关于 provider：先问 key，再写代码。** 如果用户是在做公开网站，`provider` + `apiKey` 直接写在页面里等于把 key 公开。
+这时候正确的话术是："预设我可以用，但 key 得放后端，前端打你自己的接口"——然后给他后端代理的骨架
+（`self-hosted-widget.md` 的「后端代理」有 FastAPI / Node 两份）。
+只有本机开发、内网、或 Ollama 这类不需要 key 的场景，才可以直接连。
 
 动手写代码之前先确认这些确实不满足需求——把已有能力重写一遍是这条路上最常见的浪费。
 
@@ -113,6 +120,7 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 - [ ] 历史 / 新对话 / 记忆按需求生效；`storage` 选对了（`session` 关标签页就清，`local` 跨访问保留）。刷新一次页面确认。
 - [ ] 配了热词的话：能拉到；**拉不到时有兜底**，不会变成一片空白。
 - [ ] 配了知识库的话：引用能显示出来，链接点得开。
+- [ ] 快捷键：`mod+K` 能开合；焦点在**站点自己的输入框**里时不被抢（用真实按键测，合成事件测不出来）。
 - [ ] 面板内的文字样式和站点完全一致/完全不冲突：在挂件开启前后各取一次站点某个关键元素的 `getComputedStyle`，对比无变化。
 - [ ] 断网或后端 500 时的表现是人话错误 + 重试，不是白屏、不是死转。
 - [ ] 移动端（≤400px 宽）能正常用，输入框不被键盘顶掉，面板可关闭。
@@ -135,7 +143,7 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 
 - `references/appflow-sdk.md` —— AppFlow Chat SDK 的完整 API（init 参数、setUser/setExtraInfo/onBeforeSend/onAfterSend/close、消息结构）。写 A 路径代码前必读，不要凭记忆写 API。
 - `references/console-setup.md` —— 阿里云控制台四步（百炼建应用 → 拿凭证 → AppFlow 建助手 → Web 集成），含 RAG 知识库接法。
-- `references/self-hosted-widget.md` —— 自建挂件的架构、传输契约、两个后端代理实现、挂载方式。
+- `references/self-hosted-widget.md` —— 自建挂件的架构、传输契约、两个后端代理实现、挂载方式、完整配置表，以及快捷键、provider 预设、记忆/历史、知识库与引用。
 - `references/troubleshooting.md` —— 按症状查：request error / Failed to stream content / 图标不出 / 样式打架 / 答不准 / 流式中断。
 - `references/design.md` —— 挂件的视觉决策与反"AI 味"清单。
 - `assets/appflow-snippet.html` —— A 路径可粘贴模板（含全部常用参数与注释）。

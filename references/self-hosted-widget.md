@@ -210,6 +210,8 @@ bundle 名，猜不到样式表，挂件就会以**无样式状态**渲染。这
 | `hotWordsRefresh` | `0` | 毫秒；>0 时定时重拉（热榜会变，这个才有意义） |
 | `hotWordsPlacement` | `'both'` | `'empty'`（只在空态）/ `'composer'`（只做输入框上方的常驻条）/ `'both'` / `'off'` |
 | `transport` / `endpoint` / `model` / `apiKey` / `appId` | — | 后端对接 |
+| `provider` | — | 大模型服务商预设，见「内嵌大模型 API」一节 |
+| `auth` | 跟随 provider | `'bearer'` / `'x-api-key'` / `'none'` |
 | `headers` / `body` | — | 附加到请求上的头与字段（例如自研网关要的租户头） |
 | `retrieve` | — | `async (query, {messages}) => [{title,url,snippet}]`。前端检索钩子，适合知识库就在同源后端的场景 |
 | `knowledge` | — | 知识库配置（`{id, name, topK, mode}`），会随请求下发给后端 |
@@ -224,6 +226,9 @@ bundle 名，猜不到样式表，挂件就会以**无样式状态**渲染。这
 | `closeOnOutsideClick` | `true` | 点面板以外的任何地方收起 |
 | `outsideIgnore` | — | 选择器或数组。站点自己的弹层被误判成"外部点击"时，把它的选择器放进来豁免 |
 | `closeOnEsc` | `true` | Esc 收起（抽屉打开时 Esc 先关抽屉） |
+| `shortcuts` | `true` | 快捷键总开关 |
+| `hotkeys` | — | 按动作名覆盖默认组合键，例如 `{ toggle: 'mod+shift+k', help: false }` |
+| `shortcutHelp` | `true` | 是否提供快捷键help面板 |
 | `theme` | `'auto'` | `auto` / `light` / `dark` |
 | `position` | `'right'` | `right` / `left` |
 | `draggable` / `autoOpen` | `true` / `false` | 启动器可拖 / 加载后自动展开 |
@@ -269,6 +274,93 @@ w.getMemory();
 
 **该记什么**：记稳定的事实（他是谁、买过什么、偏好什么），别记临时状态（"他刚问了运费"）。
 记忆是一段会一直发给模型的文本，塞得越碎，噪音越大。摘要式的一条比十条碎片有用。
+
+## 快捷键
+
+默认这一套（Mac 上 `mod` 是 ⌘，其它平台是 Ctrl）：
+
+| 按键 | 作用 |
+|---|---|
+| `mod + K` | 打开 / 收起助手 |
+| `mod + /` | 显示快捷键面板 |
+| `mod + shift + H` | 历史与记忆 |
+| `mod + shift + O` | 新对话 |
+| `Esc` | 收起（抽屉打开时先关抽屉） |
+| `Alt + ↑` / `Alt + ↓` | 上一个 / 下一个会话 |
+| `Enter` | 发送 |
+| `Shift + Enter` | 换行 |
+| `mod + Enter` | 发送（任何情况下） |
+| `↑` | 取回上一条提问（输入框为空时） |
+
+面板里按 `mod + /` 就能看到这份表，不用翻文档。
+
+覆盖或关掉单个按键：
+
+```js
+WebAIAssistant.mount({
+  hotkeys: {
+    toggle: 'mod+shift+k',   // 换一个
+    newChat: false           // 或者直接禁用
+  }
+});
+```
+
+组合键写法：`mod+k`、`alt+arrowup`、`shift+enter`、`escape`。`mod` 会按平台自动映射成 ⌘ / Ctrl。
+
+**两条设计上的取舍**，改之前请先理解：
+
+1. **焦点在站点自己的输入框里时，全局键不抢。** 否则会把人家搜索框的 `Ctrl+K` 吃掉——这类"我们的挂件把人家网站弄坏了"的投诉很难查。判断用的是事件 `composedPath()` 的原始目标，因为 Shadow DOM 冒泡到 document 时 target 会被重定向成宿主元素。
+2. **输入法组合过程中不响应**（`isComposing` / `keyCode === 229`），否则中文输入时按 Enter 选词会误发消息。
+
+整块关掉：`shortcuts: false`。
+
+## 内嵌大模型 API（provider 预设）
+
+`provider` 帮你把"地址 + 鉴权方式 + 协议适配器"一次配好，省去抄文档：
+
+```js
+WebAIAssistant.mount({
+  provider: 'deepseek',
+  apiKey: '…',
+  model: 'deepseek-chat'      // 不填就用预设的默认模型
+});
+```
+
+| provider | 协议 | 说明 |
+|---|---|---|
+| `openai` | OpenAI | `api.openai.com` |
+| `dashscope` | OpenAI 兼容 | 阿里云百炼兼容模式 |
+| `dashscopeApp` | 智能体应用 | 需要 `appId`；知识库在百炼控制台配 |
+| `deepseek` | OpenAI 兼容 | DeepSeek |
+| `moonshot` | OpenAI 兼容 | 月之暗面 Kimi |
+| `zhipu` | OpenAI 兼容 | 智谱 GLM |
+| `siliconflow` | OpenAI 兼容 | 硅基流动 |
+| `openrouter` | OpenAI 兼容 | OpenRouter |
+| `ollama` | OpenAI 兼容 | 本机 `localhost:11434`，不需要 key |
+| `vllm` | OpenAI 兼容 | 自建 vLLM / 网关 |
+| `anthropic` | **Anthropic Messages** | 单独的适配器：system 是顶层字段、SSE 按 `type` 分事件、正文在 `content_block_delta.delta.text` |
+
+也可以只指定协议，自己填地址：
+
+```js
+WebAIAssistant.mount({ transport: 'anthropic', endpoint: '…', model: '…', apiKey: '…' });
+```
+
+看得到全部预设：`WebAIAssistant.providers`。
+
+**模型名会随各家迭代而变**，预设里的只是一个能跑起来的起点，以官方文档为准；用 `model` 覆盖即可，不必改挂件代码。
+
+### ⚠ 把 key 写在浏览器里 = 公开
+
+上面这段代码只适合**本机开发、内网、或 Ollama 这类不需要 key 的场景**。放在公开网站上，任何访客按 F12 就能拿到你的 key。生产环境只有一种正确做法：
+
+```
+浏览器  ──►  你自己的后端（key 在这里）  ──►  大模型 API
+```
+
+后端只要把 `{messages}` 转成上游协议、把 SSE 原样转发回来即可，`transports.openai` 会自动解析。FastAPI / Node 两份现成实现见上面「后端代理」一节。
+
+从浏览器**直连** Anthropic 需要额外的 `anthropic-dangerous-direct-browser-access: true` 头（挂件在你传 `allowBrowserDirect: true` 时会自动带上），而且服务商普遍不建议这么做——同样请走后端代理。
 
 ## 知识库与引用（RAG）
 

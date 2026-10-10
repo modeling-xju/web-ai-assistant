@@ -372,6 +372,47 @@
 
 .waa-mem__empty { color: var(--waa-muted); font-size: 13px; margin-top: 8px; }
 
+/* ── 快捷键help ────────────────────────────────────────────── */
+
+.waa-keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 9px 14px;
+  margin-top: 10px;
+}
+
+.waa-keys__combo {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.waa-keys kbd {
+  font-family: var(--waa-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 4px 5px;
+  min-width: 20px;
+  text-align: center;
+  color: var(--waa-ink);
+  background: rgba(127, 127, 127, 0.09);
+  border: 1px solid var(--waa-line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+
+.waa-keys__label { font-size: 13px; color: var(--waa-ink); }
+
+.waa-drawer__note {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--waa-line);
+  font-size: 12px;
+  color: var(--waa-muted);
+}
+
 .waa-msg {
   display: flex;
   gap: 9px;

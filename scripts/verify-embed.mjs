@@ -182,14 +182,21 @@ function checkFile(file) {
     [/\bsk-[A-Za-z0-9_-]{16,}/g, 'E-KEY-OPENAI', 'OpenAI 风格的 API Key'],
     [/\bBearer\s+sk-[A-Za-z0-9_-]{16,}/g, 'E-KEY-BEARER', 'Bearer + API Key'],
     [/(DASHSCOPE_API_KEY|API_KEY|APIKEY|SECRET_KEY)\s*[:=]\s*(['"`])([A-Za-z0-9_\-]{16,})\2/gi, 'E-KEY-ASSIGN', '硬编码的密钥常量'],
-    [/\bdashscope\.aliyuncs\.com[^\n]*[?&]api[_-]?key=[A-Za-z0-9]{16,}/gi, 'E-KEY-QUERY', 'URL 里带明文 key']
+    [/\bdashscope\.aliyuncs\.com[^\n]*[?&]api[_-]?key=[A-Za-z0-9]{16,}/gi, 'E-KEY-QUERY', 'URL 里带明文 key'],
+    // provider 预设这条路很容易让人顺手把 apiKey 写在配置对象里
+    [/(^|[\s,{])apiKey\s*[:=]\s*(['"`])([A-Za-z0-9_\-.]{20,})\2/gm, 'E-KEY-INLINE', '配置里内联的 apiKey'],
+    [/data-api-key\s*=\s*(['"])([A-Za-z0-9_\-.]{16,})\1/gi, 'E-KEY-ATTR', 'data-api-key 属性里的密钥']
   ];
+  // 占位符不算泄漏，否则会淹掉真正的问题
+  const KEY_PLACEHOLDER = /your|YOUR|xxx|XXXX|placeholder|PLACEHOLDER|你的|示例|example|changeme|TODO/i;
   for (const [re, code, label] of KEY_PATTERNS) {
     re.lastIndex = 0;
     while ((m = re.exec(src))) {
+      const val = m[m.length - 1] || m[0];
+      if (KEY_PLACEHOLDER.test(val)) continue;
       push('error', code, m.index,
-        `${label}出现在前端代码里：${m[0].slice(0, 40)}…`,
-        '前端是公开的，写进去等于公开。把 key 放到后端，前端请求你自己的接口');
+        `${label}出现在前端代码里：${m[0].slice(0, 48)}…`,
+        '前端是公开的，写进去等于公开。key 放后端，或改用 transports.openai 指向你自己的接口');
     }
   }
 

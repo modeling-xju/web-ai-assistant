@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 372" width="820" height="372" role="img" aria-labelledby="pathsTitle pathsDesc">
+  <title id="pathsTitle">两条接入路径</title>
+  <desc id="pathsDesc">路径 A 用阿里云 AppFlow 托管的悬浮挂件直连百炼智能体应用；路径 B 是自建挂件，经过你自己的后端代理再连任意大模型 API。两条路的前端都不出现 API Key。</desc>
+
+  <style>
+    .sans { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .card { fill: #FBFAF7; stroke: rgba(23,22,26,.22); }
+    .cardKey { fill: #FBFAF7; stroke: #D8402F; stroke-width: 1.6; }
+    .ink { fill: #17161A; }
+    .muted { fill: #6E6A66; }
+    .arrow { stroke: rgba(23,22,26,.55); stroke-width: 1.4; fill: none; }
+    .lane { fill: #6E6A66; letter-spacing: .12em; }
+  </style>
+
+  <defs>
+    <marker id="tip" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="rgba(23,22,26,.55)"/>
+    </marker>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="819" height="371" rx="10" fill="#FBFAF7" stroke="rgba(23,22,26,.06)"/>
+
+  <!-- ── 路径 A ───────────────────────────────────────────── -->
+  <text x="28" y="42" class="mono lane" font-size="10.5">路径 A · 官方挂件（最省事）</text>
+
+  <rect x="28" y="56" width="220" height="74" rx="4" class="card"/>
+  <text x="46" y="86" class="sans ink" font-size="13.5" font-weight="600">你的网站页面</text>
+  <text x="46" y="107" class="sans muted" font-size="11.5">粘贴两段 &lt;script&gt;</text>
+
+  <line x1="252" y1="93" x2="284" y2="93" class="arrow" marker-end="url(#tip)"/>
+
+  <rect x="288" y="56" width="220" height="74" rx="4" class="card"/>
+  <text x="306" y="86" class="sans ink" font-size="13.5" font-weight="600">AppFlow 悬浮挂件</text>
+  <text x="306" y="107" class="mono muted" font-size="10">o.alicdn.com/…/AppflowChatSDK.js</text>
+
+  <line x1="512" y1="93" x2="544" y2="93" class="arrow" marker-end="url(#tip)"/>
+
+  <rect x="548" y="56" width="244" height="74" rx="4" class="card"/>
+  <text x="566" y="86" class="sans ink" font-size="13.5" font-weight="600">百炼智能体应用</text>
+  <text x="566" y="107" class="sans muted" font-size="11.5">知识库（RAG）在控制台里配</text>
+
+  <!-- ── 路径 B ───────────────────────────────────────────── -->
+  <text x="28" y="176" class="mono lane" font-size="10.5">路径 B · 自建挂件（可控、可换模型）</text>
+
+  <rect x="28" y="190" width="220" height="74" rx="4" class="card"/>
+  <text x="46" y="220" class="sans ink" font-size="13.5" font-weight="600">你的网站页面</text>
+  <text x="46" y="241" class="sans muted" font-size="11.5">一个 &lt;script&gt; + Shadow DOM</text>
+
+  <line x1="252" y1="227" x2="284" y2="227" class="arrow" marker-end="url(#tip)"/>
+
+  <rect x="288" y="190" width="220" height="74" rx="4" class="cardKey"/>
+  <text x="306" y="220" class="sans ink" font-size="13.5" font-weight="600">你的后端代理</text>
+  <text x="306" y="241" class="sans" font-size="11.5" fill="#D8402F">API Key 只存在这里</text>
+
+  <line x1="512" y1="227" x2="544" y2="227" class="arrow" marker-end="url(#tip)"/>
+
+  <rect x="548" y="190" width="244" height="74" rx="4" class="card"/>
+  <text x="566" y="220" class="sans ink" font-size="13.5" font-weight="600">任意大模型 API</text>
+  <text x="566" y="241" class="sans muted" font-size="11.5">OpenAI · 百炼 · DeepSeek · Claude …</text>
+
+  <!-- ── 脚注 ─────────────────────────────────────────────── -->
+  <line x1="28" y1="300" x2="792" y2="300" stroke="rgba(23,22,26,.14)"/>
+  <text x="28" y="326" class="sans ink" font-size="12.5">两条路的前端都不出现 API Key。</text>
+  <text x="28" y="348" class="sans muted" font-size="12.5">A 不用你写后端；B 让你能随时换模型——界面代码一行都不用动。</text>
+</svg>

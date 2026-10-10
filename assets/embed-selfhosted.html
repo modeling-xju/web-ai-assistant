@@ -39,7 +39,10 @@
 <!--
   data-* 速查
     data-name         标题栏里的名字
-    data-transport    openai | dashscopeApp | echo，或你自己 defineTransport 注册的名字
+    data-provider     大模型服务商预设：openai | dashscope | deepseek | moonshot |
+                      zhipu | siliconflow | openrouter | ollama | vllm | anthropic
+                      （填了它就不用自己抄 endpoint / model / 鉴权方式）
+    data-transport    openai | anthropic | dashscopeApp | echo，或你注册的自定义名字
     data-endpoint     后端地址（openai 协议就是这个接口）
     data-model        模型名
     data-app-id       百炼应用 ID（transport=dashscopeApp 时用）
@@ -52,6 +55,8 @@
     data-memory       true | false，是否启用记忆
     data-history      true | false，是否启用多会话历史
     data-close-on-outside-click  true（默认）| false
+    data-shortcuts    true（默认）| false，快捷键总开关
+    data-outside-ignore  站点自己的弹层选择器（逗号分隔），点它不算"外部点击"
     data-theme        auto | light | dark
     data-position     right | left
     data-draggable    true | false

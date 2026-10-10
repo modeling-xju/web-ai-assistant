@@ -221,13 +221,21 @@
     return text;
   };
 
+  /** 按 auth 风格拼鉴权头。默认 bearer；Anthropic 用 x-api-key。 */
+  function authHeaders(c) {
+    var h = {};
+    if (!c.apiKey) return h;
+    var style = c.auth || 'bearer';
+    if (style === 'x-api-key') h['x-api-key'] = c.apiKey;
+    else if (style !== 'none') h.Authorization = 'Bearer ' + c.apiKey;
+    return h;
+  }
+
   /** OpenAI 兼容协议（含百炼 compatible-mode、vLLM、Ollama、各类网关）。 */
   transports.openai = async function (ctx) {
     var c = ctx.config;
-    if (!c.endpoint) throw new Error('缺少 endpoint');
-    var headers = { 'Content-Type': 'application/json' };
-    if (c.apiKey) headers.Authorization = 'Bearer ' + c.apiKey;
-    Object.assign(headers, c.headers || {});
+    if (!c.endpoint) throw new Error('缺少 endpoint（或指定 provider 预设）');
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, authHeaders(c), c.headers || {});
 
     var body = Object.assign({
       model: c.model,
@@ -305,9 +313,8 @@
         method: 'POST',
         headers: Object.assign({
           'Content-Type': 'application/json',
-          'X-DashScope-SSE': 'enable',
-          Authorization: 'Bearer ' + (c.apiKey || '')
-        }, c.headers || {}),
+          'X-DashScope-SSE': 'enable'
+        }, authHeaders(c), c.headers || {}),
         body: JSON.stringify({
           input: input,
           parameters: Object.assign({}, c.parameters || {}),
@@ -330,6 +337,69 @@
       }
       var piece = chunk.output && chunk.output.text;
       if (piece) { text += piece; ctx.onDelta(piece, text); }
+    }
+    return text;
+  };
+
+  /**
+   * Anthropic Messages API（/v1/messages）。
+   * 它的请求/响应形状和 OpenAI 都不一样：system 是顶层字段、SSE 事件按 type 分，
+   * 正文在 content_block_delta.delta.text 里。所以单独一个适配器。
+   */
+  transports.anthropic = async function (ctx) {
+    var c = ctx.config;
+    if (!c.endpoint) throw new Error('缺少 endpoint（或指定 provider: "anthropic"）');
+
+    // Anthropic 把 system 放在顶层，不放在 messages 里
+    var sys = ctx.messages.filter(function (m) { return m.role === 'system'; })
+      .map(function (m) { return m.content; }).join('\n\n');
+    var msgs = ctx.messages.filter(function (m) { return m.role !== 'system'; })
+      .map(function (m) { return { role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }; });
+
+    var headers = Object.assign({
+      'Content-Type': 'application/json',
+      'anthropic-version': c.anthropicVersion || '2023-06-01'
+    }, authHeaders(Object.assign({ auth: 'x-api-key' }, c)), c.headers || {});
+    // 从浏览器直接调 Anthropic 需要显式放行，否则会被 CORS 拦掉——
+    // 生产环境请走后端代理，见 references/self-hosted-widget.md
+    if (c.allowBrowserDirect) headers['anthropic-dangerous-direct-browser-access'] = 'true';
+
+    var res = await fetch(c.endpoint, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(Object.assign({
+        model: c.model,
+        max_tokens: c.maxTokens || 2048,
+        messages: msgs,
+        stream: true
+      }, sys ? { system: sys } : {}, c.body || {})),
+      signal: ctx.signal
+    });
+    if (!res.ok) throw HttpError(res.status, await safeText(res));
+
+    var ct = res.headers.get('content-type') || '';
+    if (ct.indexOf('text/event-stream') === -1) {
+      var json = await res.json().catch(function () { return null; });
+      var whole = (json && json.content || []).filter(function (b) { return b.type === 'text'; })
+        .map(function (b) { return b.text; }).join('');
+      if (whole && ctx.onDelta) ctx.onDelta(whole, whole);
+      return whole;
+    }
+
+    var text = '';
+    for await (var data of readSSE(res)) {
+      if (!data || data === '[DONE]') continue;
+      var ev;
+      try { ev = JSON.parse(data); } catch (e) { continue; }
+      if (ev.type === 'error') throw new Error((ev.error && ev.error.message) || '上游返回错误');
+      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) {
+        text += ev.delta.text;
+        ctx.onDelta(ev.delta.text, text);
+      }
+      if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason === 'max_tokens') {
+        text += '\n\n（已达单次回复长度上限）';
+        ctx.onDelta('', text);
+      }
     }
     return text;
   };
@@ -437,6 +507,8 @@
       input: '输入你的问题…', retry: '重试', thinking: '正在回答',
       online: '在线', offline: '连接中断',
       newChat: '新对话', history: '历史记录', hot: '热词',
+      shortcuts: '快捷键', back: '返回',
+      shortcutsNote: '站点自己的输入框里不会抢这些键。按 Esc 关闭。',
       memory: '记忆', memoryEmpty: '还没有记住任何信息',
       memoryClear: '清空记忆', clearAll: '清空全部', refs: '参考资料',
       emptyTitle: '新对话', untitled: '新对话', delete: '删除', justNow: '刚刚'
@@ -446,16 +518,196 @@
       input: 'Ask a question…', retry: 'Retry', thinking: 'Answering',
       online: 'Online', offline: 'Disconnected',
       newChat: 'New chat', history: 'History', hot: 'Trending',
+      shortcuts: 'Shortcuts', back: 'Back',
+      shortcutsNote: 'These keys are not captured while typing in the site\u2019s own inputs. Press Esc to close.',
       memory: 'Memory', memoryEmpty: 'Nothing remembered yet',
       memoryClear: 'Clear memory', clearAll: 'Clear all', refs: 'Sources',
       emptyTitle: 'New chat', untitled: 'New chat', delete: 'Delete', justNow: 'just now'
     }
   };
 
+  /* ────────────────────────────────────────────────────────────
+   * 大模型服务商预设
+   *
+   * 这里只固化"管道形状"——地址、鉴权方式、协议适配器，
+   * 以及一个**建议的**默认模型名。模型名各家都在快速迭代，
+   * 以官方文档为准；用 model 覆盖即可，不用改这里的代码。
+   * ──────────────────────────────────────────────────────────── */
+
+  var PROVIDERS = {
+    openai: {
+      label: 'OpenAI',
+      endpoint: 'https://api.openai.com/v1/chat/completions',
+      model: 'gpt-4o-mini', transport: 'openai', auth: 'bearer'
+    },
+    dashscope: {
+      label: '阿里云百炼（OpenAI 兼容模式）',
+      endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+      model: 'qwen-plus', transport: 'openai', auth: 'bearer'
+    },
+    dashscopeApp: {
+      label: '阿里云百炼（智能体应用）',
+      endpoint: 'https://dashscope.aliyuncs.com',
+      model: '', transport: 'dashscopeApp', auth: 'bearer', needsAppId: true
+    },
+    deepseek: {
+      label: 'DeepSeek',
+      endpoint: 'https://api.deepseek.com/chat/completions',
+      model: 'deepseek-chat', transport: 'openai', auth: 'bearer'
+    },
+    moonshot: {
+      label: '月之暗面 Kimi',
+      endpoint: 'https://api.moonshot.cn/v1/chat/completions',
+      model: 'moonshot-v1-8k', transport: 'openai', auth: 'bearer'
+    },
+    zhipu: {
+      label: '智谱 GLM',
+      endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+      model: 'glm-4-flash', transport: 'openai', auth: 'bearer'
+    },
+    siliconflow: {
+      label: 'SiliconFlow 硅基流动',
+      endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
+      model: 'Qwen/Qwen2.5-7B-Instruct', transport: 'openai', auth: 'bearer'
+    },
+    openrouter: {
+      label: 'OpenRouter',
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      model: 'openai/gpt-4o-mini', transport: 'openai', auth: 'bearer'
+    },
+    ollama: {
+      label: 'Ollama（本机）',
+      endpoint: 'http://localhost:11434/v1/chat/completions',
+      model: 'qwen2.5', transport: 'openai', auth: 'none'
+    },
+    vllm: {
+      label: 'vLLM / 自建网关',
+      endpoint: 'http://localhost:8000/v1/chat/completions',
+      model: '', transport: 'openai', auth: 'bearer'
+    },
+    anthropic: {
+      label: 'Anthropic Claude',
+      endpoint: 'https://api.anthropic.com/v1/messages',
+      model: 'claude-sonnet-4-6', transport: 'anthropic', auth: 'x-api-key'
+    }
+  };
+
+  /**
+   * 把 provider 预设铺进**原始**配置里（必须在合并 DEFAULTS 之前调用，
+   * 否则分不清"用户显式传了 transport"和"默认值填的 transport"）。
+   * 显式传的 endpoint / model / transport 永远优先于预设——
+   * 预设只是省去抄地址，不是一个"你必须接受"的约定。
+   */
+  function applyProvider(o) {
+    var name = o.provider;
+    if (!name) return o;
+    var p = PROVIDERS[name];
+    if (!p) {
+      if (global.console && console.warn) {
+        console.warn('[web-ai-assistant] 未知的 provider：' + name +
+          '。可选：' + Object.keys(PROVIDERS).join(' / '));
+      }
+      return o;
+    }
+    o.providerLabel = p.label;
+    if (!o.transport) o.transport = p.transport;
+    if (!o.endpoint) o.endpoint = p.endpoint;
+    if (!o.model) o.model = p.model;
+    if (!o.auth) o.auth = p.auth;
+    return o;
+  }
+
+  /* ────────────────────────────────────────────────────────────
+   * 快捷键
+   *
+   * 组合键写法："mod+k"（Mac 上是 ⌘，其它平台是 Ctrl）、"alt+arrowup"、
+   * "escape"、"shift+enter"。用 hotkeys 配置项按动作名覆盖。
+   * ──────────────────────────────────────────────────────────── */
+
+  var IS_MAC = /mac|iphone|ipad|ipod/i.test(
+    (global.navigator && (global.navigator.platform || global.navigator.userAgent)) || ''
+  );
+
+  var SHORTCUTS = [
+    { id: 'toggle',    combo: 'mod+k',         scope: 'global', zh: '打开 / 收起助手',       en: 'Open / close assistant' },
+    { id: 'help',      combo: 'mod+/',         scope: 'global', zh: '显示快捷键',             en: 'Show shortcuts' },
+    { id: 'history',   combo: 'mod+shift+h',   scope: 'global', zh: '历史与记忆',             en: 'History & memory' },
+    { id: 'newChat',   combo: 'mod+shift+o',   scope: 'global', zh: '新对话',                 en: 'New chat' },
+    { id: 'close',     combo: 'escape',        scope: 'panel',  zh: '收起（抽屉打开时先关抽屉）', en: 'Close (closes drawer first)' },
+    { id: 'prevChat',  combo: 'alt+arrowup',   scope: 'panel',  zh: '上一个会话',             en: 'Previous chat' },
+    { id: 'nextChat',  combo: 'alt+arrowdown', scope: 'panel',  zh: '下一个会话',             en: 'Next chat' },
+    { id: 'send',      combo: 'enter',         scope: 'input',  zh: '发送',                   en: 'Send' },
+    { id: 'newline',   combo: 'shift+enter',   scope: 'input',  zh: '换行',                   en: 'New line' },
+    { id: 'sendAny',   combo: 'mod+enter',     scope: 'input',  zh: '发送（任何情况下）',      en: 'Send (always)' },
+    { id: 'editLast',  combo: 'arrowup',       scope: 'input',  zh: '取回上一条提问（输入框为空时）', en: 'Recall last question (empty input)' }
+  ];
+
+  function parseCombo(s) {
+    var o = { mod: false, alt: false, shift: false, ctrl: false, meta: false, key: '' };
+    String(s).toLowerCase().split('+').forEach(function (p) {
+      p = p.trim();
+      if (!p) return;
+      if (p === 'mod') o.mod = true;
+      else if (p === 'alt' || p === 'option') o.alt = true;
+      else if (p === 'shift') o.shift = true;
+      else if (p === 'ctrl' || p === 'control') o.ctrl = true;
+      else if (p === 'meta' || p === 'cmd' || p === 'command') o.meta = true;
+      else o.key = p;
+    });
+    return o;
+  }
+
+  // 解析结果缓存。注意不能挂在 combo 字符串上（'use strict' 下给原始值设属性会抛错），
+  // 必须用独立的表。
+  var COMBO_CACHE = {};
+
+  function matchCombo(combo, e) {
+    var c = COMBO_CACHE[combo] || (COMBO_CACHE[combo] = parseCombo(combo));
+    var key = String(e.key || '').toLowerCase();
+    if (key === ' ') key = 'space';
+    if (c.key !== key) return false;
+    if (!!c.alt !== !!e.altKey) return false;
+    if (!!c.shift !== !!e.shiftKey) return false;
+    var modDown = IS_MAC ? !!e.metaKey : !!e.ctrlKey;
+    if (c.mod !== modDown) return false;
+    if (!c.mod) {
+      // 没写 mod 的组合键不能被 Ctrl/Cmd 触发，否则 "enter" 会连 Ctrl+Enter 一起吃掉
+      if (IS_MAC ? e.metaKey : e.ctrlKey) return false;
+    }
+    return true;
+  }
+
+  function fmtCombo(combo) {
+    var c = parseCombo(combo);
+    var out = [];
+    if (c.mod) out.push(IS_MAC ? '⌘' : 'Ctrl');
+    else if (c.meta) out.push('⌘');
+    else if (c.ctrl) out.push('Ctrl');
+    if (c.alt) out.push(IS_MAC ? '⌥' : 'Alt');
+    if (c.shift) out.push(IS_MAC ? '⇧' : 'Shift');
+    var names = {
+      arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→',
+      escape: 'Esc', enter: IS_MAC ? '↩' : 'Enter', space: 'Space'
+    };
+    out.push(names[c.key] || (c.key.length === 1 ? c.key.toUpperCase()
+      : c.key.charAt(0).toUpperCase() + c.key.slice(1)));
+    return out;
+  }
+
+  function isEditable(el) {
+    if (!el || !el.tagName) return false;
+    var t = el.tagName.toLowerCase();
+    if (t === 'textarea') return true;
+    if (t === 'input') return !/^(button|checkbox|radio|submit|reset|file|range|color)$/i.test(el.type || '');
+    return !!el.isContentEditable;
+  }
+
   var DEFAULTS = {
     name: '助手',
     locale: 'zh',
-    transport: 'openai',
+    provider: '',             // 见 PROVIDERS：openai / dashscope / deepseek / ollama / anthropic …
+    transport: 'openai',      // 显式指定时优先于 provider 预设
+    auth: '',                 // 'bearer' | 'x-api-key' | 'none'，留空则跟随 provider
     endpoint: '',
     model: '',
     apiKey: '',
@@ -479,6 +731,10 @@
     // 业务自己的浮层（下拉、日期选择器…）通常挂在 document.body 上，
     // 点它会被判定成"外部点击"。把这些元素的选择器放进来即可豁免。
     outsideIgnore: null,
+
+    shortcuts: true,          // 总开关
+    hotkeys: null,            // { toggle: 'mod+shift+k', … } 按动作名覆盖默认组合键
+    shortcutHelp: true,       // 是否提供快捷键help面板
 
     storage: 'session',       // session | local | none
     storageKey: 'waa',
@@ -517,7 +773,8 @@
   }
 
   function Widget(options) {
-    this.opts = Object.assign({}, DEFAULTS, options || {});
+    var raw = applyProvider(Object.assign({}, options || {}));
+    this.opts = Object.assign({}, DEFAULTS, raw);
     // 兼容 v1 的 persist:false
     if (this.opts.persist === false) this.opts.storage = 'none';
     if (this.opts.persist === true && this.opts.storage === 'session') this.opts.storage = 'local';
@@ -714,6 +971,11 @@
       h('span', { class: 'waa-launcher__glyph', 'aria-hidden': 'true' }, [this._glyph()]),
       h('span', { class: 'waa-launcher__badge', hidden: true })
     ]);
+    // 把开关键提示挂在 title 上，用户悬停就知道有快捷键
+    var toggleCombo = (this._shortcutList().filter(function (s) { return s.id === 'toggle'; })[0] || {}).combo;
+    if (toggleCombo) {
+      this.launcher.title = this.copy.open + ' · ' + fmtCombo(toggleCombo).join(IS_MAC ? '' : '+');
+    }
 
     // ── 头部
     this.headMeta = h('span', { class: 'waa-head__meta', text: this.copy.online });
@@ -749,9 +1011,8 @@
       class: 'waa-input', rows: '1', 'aria-label': this.copy.input, placeholder: this.copy.input
     });
     this.input.addEventListener('input', function () { self._autosize(); });
-    this.input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); self._submit(); }
-    });
+    // Enter / Shift+Enter / ↑ 等按键统一由快捷键引擎处理，见 _bindShortcuts，
+    // 免得两个地方各管一半、行为互相打架。
 
     this.sendBtn = h('button', {
       type: 'button', class: 'waa-send', 'aria-label': this.copy.send,
@@ -861,13 +1122,7 @@
 
   Widget.prototype._bindGlobal = function () {
     var self = this;
-    this._onKey = function (e) {
-      if (e.key !== 'Escape' || !self.openState) return;
-      if (self.drawerOpen) { self._closeDrawer(); return; }
-      if (self.opts.closeOnEsc === false) return;
-      self.close();
-    };
-    document.addEventListener('keydown', this._onKey);
+    this._bindShortcuts();
 
     // 点到挂件以外的任何地方就关上。
     // Shadow DOM 会把内部点击的 target 重定向成宿主元素，所以 contains 判断是准的。
@@ -884,6 +1139,115 @@
       self.close();
     };
     document.addEventListener('pointerdown', this._onDocPointerDown, true);
+  };
+
+  /* ── 快捷键 ───────────────────────────────────────────────── */
+
+  Widget.prototype._shortcutList = function () {
+    var over = this.opts.hotkeys || {};
+    return SHORTCUTS.map(function (s) {
+      return {
+        id: s.id,
+        combo: over[s.id] === false ? null : (over[s.id] || s.combo),
+        scope: s.scope,
+        zh: s.zh,
+        en: s.en
+      };
+    }).filter(function (s) { return s.combo; });
+  };
+
+  Widget.prototype._actions = function () {
+    var self = this;
+    return {
+      toggle: function () { self.toggle(); },
+      help: function () {
+        if (!self.openState) self.open();
+        self._openDrawer(self.drawerOpen && self.drawerView === 'shortcuts' ? 'main' : 'shortcuts');
+      },
+      history: function () {
+        if (!self.openState) self.open();
+        self.drawerOpen && self.drawerView === 'main' ? self._closeDrawer() : self._openDrawer('main');
+      },
+      newChat: function () { self.newThread(); if (!self.openState) self.open(); },
+      close: function () {
+        // 抽屉开着时，Esc 先关抽屉，不顺手把整个面板也收了
+        if (self.drawerOpen) { self._closeDrawer(); return; }
+        if (self.opts.closeOnEsc === false) return false;
+        self.close();
+      },
+      prevChat: function () { return self._stepThread(-1); },
+      nextChat: function () { return self._stepThread(1); },
+      send: function () { self._submit(); },
+      sendAny: function () { self._submit(); },
+      newline: function () { return false; },   // 交给浏览器插换行
+      editLast: function () {
+        // 只在"输入框为空"时生效，否则会抢掉正常的光标上移
+        if (self.input.value !== '') return false;
+        var last = null;
+        for (var i = self.thread.messages.length - 1; i >= 0; i--) {
+          if (self.thread.messages[i].role === 'user') { last = self.thread.messages[i]; break; }
+        }
+        if (!last) return false;
+        self.input.value = last.content;
+        self._autosize();
+        try { self.input.setSelectionRange(last.content.length, last.content.length); } catch (e) { /* 忽略 */ }
+      }
+    };
+  };
+
+  Widget.prototype._stepThread = function (dir) {
+    this._sortThreads();
+    var list = this.store.state.threads;
+    if (list.length < 2) return false;
+    var idx = list.findIndex(function (t) { return t.id === this.thread.id; }, this);
+    var next = idx + dir;
+    if (next < 0) next = list.length - 1;
+    if (next >= list.length) next = 0;
+    this.openThread(list[next].id);
+    return true;
+  };
+
+  Widget.prototype._bindShortcuts = function () {
+    var self = this;
+    var actions = this._actions();
+    this._shortcuts = this._shortcutList();
+
+    this._onKeydown = function (e) {
+      if (self.opts.shortcuts === false) return;
+      // 中文/日文输入法组合过程中不能当成快捷键
+      if (e.isComposing || e.keyCode === 229) return;
+
+      // 注意：keydown 从 Shadow DOM 里冒到 document 时，target 会被重定向成宿主元素，
+      // 所以 "事件是不是发生在我们的输入框里" 必须用 composedPath 的原始目标来判断。
+      var origin = (e.composedPath && e.composedPath()[0]) || e.target;
+      var inWidget = self.host.contains(e.target);
+      var typingElsewhere = !inWidget && isEditable(origin);
+
+      for (var i = 0; i < self._shortcuts.length; i++) {
+        var s = self._shortcuts[i];
+        if (!matchCombo(s.combo, e)) continue;
+
+        var allowed;
+        if (s.scope === 'global') {
+          // 全局键的意义就是"在哪都能按"。但焦点在站点自己的输入框里时不抢——
+          // 否则会把人家搜索框的 Ctrl+K 吃掉。
+          allowed = inWidget || !typingElsewhere;
+        } else if (s.scope === 'panel') {
+          allowed = self.openState && (inWidget || !typingElsewhere);
+        } else {
+          allowed = self.openState && origin === self.input;
+        }
+        if (!allowed) continue;
+
+        var fn = actions[s.id];
+        if (!fn) continue;
+        if (fn(e) === false) continue;   // 动作自己说不处理，就让事件继续冒泡
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    };
+    document.addEventListener('keydown', this._onKeydown);
   };
 
   Widget.prototype._syncTheme = function () {
@@ -1172,10 +1536,11 @@
   /* ── 历史抽屉 ─────────────────────────────────────────────── */
 
   Widget.prototype._toggleDrawer = function () {
-    this.drawerOpen ? this._closeDrawer() : this._openDrawer();
+    this.drawerOpen ? this._closeDrawer() : this._openDrawer('main');
   };
 
-  Widget.prototype._openDrawer = function () {
+  Widget.prototype._openDrawer = function (view) {
+    this.drawerView = view || 'main';
     this.drawerOpen = true;
     this._renderDrawer();
     this.drawer.hidden = false;
@@ -1191,6 +1556,36 @@
   };
 
   Widget.prototype._renderDrawer = function () {
+    this.drawer.textContent = '';
+    if (this.drawerView === 'shortcuts') { this._renderShortcuts(); return; }
+    this._renderHistoryAndMemory();
+  };
+
+  Widget.prototype._renderShortcuts = function () {
+    var self = this;
+    var en = this.opts.locale === 'en';
+    var rows = h('dl', { class: 'waa-keys' });
+    this._shortcutList().forEach(function (s) {
+      var combo = h('dt', { class: 'waa-keys__combo' });
+      fmtCombo(s.combo).forEach(function (k) { combo.appendChild(h('kbd', { text: k })); });
+      rows.appendChild(combo);
+      rows.appendChild(h('dd', { class: 'waa-keys__label', text: en ? s.en : s.zh }));
+    });
+
+    this.drawer.appendChild(h('div', { class: 'waa-drawer__sec' }, [
+      h('div', { class: 'waa-drawer__head' }, [
+        h('span', { class: 'waa-drawer__title', text: this.copy.shortcuts }),
+        h('button', {
+          type: 'button', class: 'waa-drawer__act', text: this.copy.back,
+          onclick: function () { self._openDrawer('main'); }
+        })
+      ]),
+      rows,
+      h('p', { class: 'waa-drawer__note', text: this.copy.shortcutsNote })
+    ]));
+  };
+
+  Widget.prototype._renderHistoryAndMemory = function () {
     var self = this;
     this.drawer.textContent = '';
 
@@ -1444,7 +1839,7 @@
   Widget.prototype.reset = function () { return this.newThread(); };
 
   Widget.prototype.destroy = function () {
-    document.removeEventListener('keydown', this._onKey);
+    document.removeEventListener('keydown', this._onKeydown);
     document.removeEventListener('pointerdown', this._onDocPointerDown, true);
     if (this._hotTimer) clearInterval(this._hotTimer);
     if (this._teardownDrag) this._teardownDrag();
@@ -1495,6 +1890,7 @@
       var d = s.dataset;
       var w = mount({
         scriptEl: s,
+        provider: d.provider || '',
         name: d.name || DEFAULTS.name,
         locale: d.locale || DEFAULTS.locale,
         transport: d.transport || DEFAULTS.transport,
@@ -1512,6 +1908,8 @@
         draggable: d.draggable !== 'false',
         autoOpen: d.autoOpen === 'true',
         closeOnOutsideClick: d.closeOnOutsideClick !== 'false',
+        shortcuts: d.shortcuts !== 'false',
+        outsideIgnore: d.outsideIgnore || null,
         storage: d.storage || (d.persist === 'false' ? 'none' : (d.persist === 'true' ? 'local' : DEFAULTS.storage)),
         history: d.history !== 'false',
         memory: d.memory !== 'false',
@@ -1539,6 +1937,8 @@
     mount: mount,
     defineTransport: defineTransport,
     transports: transports,
+    providers: PROVIDERS,
+    shortcuts: SHORTCUTS,
     instances: instances
   };
 })(window);
