@@ -1,0 +1,76 @@
+<!--
+  AppFlow AI 助手 · 页面挂载模板（路径 A）
+
+  用法：
+    1. 把两个占位符换成你自己的值（在 AppFlow 的「AI 助手 → Web 集成」页面里抄）。
+       INTEGRATE_ID    ← 页面集成详情里的「集成 ID」
+       REQUEST_DOMAIN  ← 形如 https://xxx.appflow.aliyunnest.com，必须来自你自己的集成页面
+    2. 整段粘到 </body> 之前。SPA 里放到应用入口，只执行一次。
+
+  为什么 init 包在 load 事件里：
+    SDK 那个 <script> 带 defer，要等文档解析完才执行；而下面的内联 <script> 会立即执行。
+    直接调用必然是 "APPFLOW_CHAT_SDK is undefined"。包在 load 里是最省事的正确做法。
+-->
+
+<!-- 1) SDK。defer 不阻塞首屏 -->
+<script src="https://o.alicdn.com/appflow/chatbot/v1/AppflowChatSDK.js" defer></script>
+
+<!-- 2) 初始化 -->
+<script>
+(function () {
+  var CONFIG = {
+    integrateConfig: {
+      integrateId: 'INTEGRATE_ID',
+      domain: { requestDomain: 'REQUEST_DOMAIN' },
+
+      // —— 外观与行为，按需打开 ——
+      draggable: true,          // 悬浮框可拖动
+      autoOpen: false,          // 保持 false：访客刚落地的第一秒不该被打扰
+      initialMessage: '',       // 打开时预填到输入框的内容
+      initialMessageAutoSend: false,
+      customStyle: {
+        containerStyle: { width: '384px', height: '620px', maxHeight: '80vh', maxWidth: '92vw' }
+        // botBubbleStyle: { width: '100%', maxWidth: '100%' }
+      }
+    }
+  };
+
+  function boot() {
+    if (!window.APPFLOW_CHAT_SDK) {
+      // defer 脚本在极慢网络下可能还没到位，退一步再试
+      return setTimeout(boot, 200);
+    }
+    window.APPFLOW_CHAT_SDK.init(CONFIG);
+
+    // —— 3) 把站点上下文喂给助手（价值最高的一段，别省）——
+    // 全局参数：每条消息都会带上
+    window.APPFLOW_CHAT_SDK.setExtraInfo({
+      currentPage: location.pathname,
+      pageTitle: document.title
+    }, true);
+
+    // 已登录用户：把身份传进去，助手才能答"我的订单"
+    // window.APPFLOW_CHAT_SDK.setUser({ userId: 'u-1', userName: '张三' });
+
+    // 随页面变化的一次性上下文：用临时参数（不加 true）
+    // window.APPFLOW_CHAT_SDK.setExtraInfo({ productId: 'SKU-12345' });
+
+    // —— 4) 可选：埋点与留痕 ——
+    // window.APPFLOW_CHAT_SDK.onAfterSend(function (params) {
+    //   if (!params.success) return;
+    //   navigator.sendBeacon('/api/assistant/log', JSON.stringify({
+    //     q: params.userMessage, a: params.assistantContent
+    //   }));
+    // });
+
+    // —— 5) 可选：发送前拦截（内容审核）——
+    // window.APPFLOW_CHAT_SDK.onBeforeSend(async function (params) {
+    //   var ok = await fetch('/api/moderation?text=' + encodeURIComponent(params.userMessage.text.content));
+    //   if (!ok.ok) throw new Error('内容不合规');
+    // }, { async: true });
+  }
+
+  if (document.readyState === 'complete') boot();
+  else window.addEventListener('load', boot);
+})();
+</script>

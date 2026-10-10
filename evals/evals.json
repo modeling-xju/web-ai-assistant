@@ -1,0 +1,26 @@
+{
+  "skill_name": "web-ai-assistant",
+  "evals": [
+    {
+      "id": 0,
+      "name": "appflow-embed-into-existing-site",
+      "prompt": "这是我们公司的官网，文件就在 fixtures/acme-shop 里。我想把 AI 助手挂到网站上，AppFlow 那边我已经建好集成了：集成 ID 是 ig_7d31c9e0ab，请求域名是 https://acme-shop.appflow.aliyunnest.com。助手想叫「小助」，我们卖的是按摩椅。帮我接上去。",
+      "files": ["fixtures/acme-shop/"],
+      "expected_output": "官网每个页面都接上 AppFlow 悬浮挂件；集成 ID 与请求域名用真实值；init 时序正确（不会 undefined）；顺手补了业务上下文；既有的页面内容和样式一行没动；跑过校验并把结果写进交付说明。"
+    },
+    {
+      "id": 1,
+      "name": "self-hosted-no-aliyun-account",
+      "prompt": "我不想注册阿里云，就想要自己网站上有个能回答访客问题的助手。我们是个卖绿植的小店，网站就是 fixtures/greenshop 里那几个静态页面。后端我还没写，你先把前端弄起来，让我能看到效果。",
+      "files": ["fixtures/greenshop/"],
+      "expected_output": "用自建挂件方案；样式隔离（Shadow DOM）；本地就能看到可交互效果；明确说明密钥必须放后端并给出后端接口的形状或骨架；不把任何 key 写进前端。"
+    },
+    {
+      "id": 2,
+      "name": "diagnose-broken-embed",
+      "prompt": "我们网站上的 AI 助手坏了，就在 fixtures/broken-site 里。点开对话框发消息就报 Failed to stream content，控制台里还有个 APPFLOW_CHAT_SDK is undefined。你帮我看看怎么回事，修一下。",
+      "files": ["fixtures/broken-site/"],
+      "expected_output": "两个症状都定位到根因：requestDomain 被写成了相对路径，以及 init 在 defer 脚本之前执行。修复两处，且不引入新问题；说明每个症状的成因。"
+    }
+  ]
+}

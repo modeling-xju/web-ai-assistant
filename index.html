@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>web-ai-assistant · 在线演示</title>
+<style>
+  /* ── 演示控制条 ───────────────────────────────────────── */
+  .bar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    padding: 9px 16px;
+    background: #17161a; color: #cfcac2;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.02em;
+  }
+  .bar b { color: #ff6a4d; font-weight: 600; letter-spacing: 0.1em; }
+  .bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .bar select {
+    font: inherit; background: #26242a; color: #e8e4dd;
+    border: 1px solid #3d3a42; border-radius: 2px; padding: 2px 4px;
+  }
+  .bar button {
+    font: inherit; cursor: pointer; padding: 3px 10px;
+    background: none; color: #cfcac2;
+    border: 1px solid #3d3a42; border-radius: 2px;
+  }
+  .bar button:hover { background: #ff6a4d; border-color: #ff6a4d; color: #17161a; }
+  .bar .gap { margin-left: auto; }
+
+  /* ── 被演示的"别人的网站" ─────────────────────────────── */
+  :root { --ink: #1b1917; --paper: #f7f5f0; --accent: #a8542f; --rule: rgba(27,25,23,.14); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font-family: "Songti SC", Georgia, "Times New Roman", serif; line-height: 1.75; }
+
+  header.site {
+    display: flex; align-items: baseline; gap: 26px;
+    padding: 22px 34px; border-bottom: 1px solid var(--rule);
+  }
+  header.site .logo { font-size: 19px; letter-spacing: 0.34em; }
+  header.site nav a { margin-right: 18px; color: inherit; text-decoration: none; font-size: 14px; }
+
+  main { max-width: 900px; margin: 0 auto; padding: 56px 34px 130px; }
+  h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.25; margin: 0 0 14px; font-weight: 500; }
+  .lede { color: #6d665c; max-width: 46ch; }
+  h2 { font-size: 17px; letter-spacing: 0.06em; margin: 48px 0 14px; font-weight: 600; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1px;
+           background: var(--rule); border: 1px solid var(--rule); margin-top: 18px; }
+  .cards article { background: var(--paper); padding: 20px 22px; }
+  .cards h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+  .cards p { margin: 0; font-size: 14px; color: #6d665c; }
+  .cards .price { margin-top: 10px; color: var(--accent); font-size: 15px; }
+
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 22px; font-size: 14px; }
+  dt { color: #6d665c; }
+  dd { margin: 0; }
+
+  footer.site { border-top: 1px solid var(--rule); padding: 22px 34px; font-size: 13px; color: #6d665c; }
+
+  .hint { margin-top: 34px; padding: 14px 18px; border-left: 2px solid var(--accent);
+          background: rgba(168,84,47,.05); font-size: 14px; }
+  .hint code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <b>演示控制</b>
+  <label>主题
+    <select id="theme">
+      <option value="light">昼</option>
+      <option value="dark">夜</option>
+      <option value="auto">跟随系统</option>
+    </select>
+  </label>
+  <label>主色
+    <select id="accent">
+      <option value="">默认朱砂</option>
+      <option value="#a8542f">站点主色（赭）</option>
+      <option value="#0f766e">青</option>
+      <option value="#1f2937">墨</option>
+    </select>
+  </label>
+  <label>位置
+    <select id="position">
+      <option value="right">右下</option>
+      <option value="left">左下</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="draggable" checked> 可拖拽</label>
+  <button id="toggle">打开 / 收起</button>
+  <button id="reset">重置会话</button>
+  <span class="gap"></span>
+  <span>transport = demo（无后端，纯前端模拟流式回复）</span>
+</div>
+
+<header class="site">
+  <span class="logo">野径</span>
+  <nav>
+    <a href="#beans">豆子</a>
+    <a href="#brew">冲煮</a>
+    <a href="#ship">配送</a>
+  </nav>
+</header>
+
+<main>
+  <h1>把一支豆子烘到它该有的样子</h1>
+  <p class="lede">每周三烘一次，烘完当天发。只做浅烘和中烘——深烘会盖掉豆子本来的味道。</p>
+
+  <h2 id="beans">本周在售</h2>
+  <div class="cards">
+    <article>
+      <h3>埃塞 耶加雪菲</h3>
+      <p>水洗 · 浅烘。柑橘、白花、红茶尾韵。</p>
+      <p class="price">¥ 98 / 200g</p>
+    </article>
+    <article>
+      <h3>哥伦比亚 慧兰</h3>
+      <p>水洗 · 中烘。焦糖、坚果、可可。</p>
+      <p class="price">¥ 86 / 200g</p>
+    </article>
+    <article>
+      <h3>云南 保山</h3>
+      <p>日晒 · 中烘。红糖、李子、桂圆。</p>
+      <p class="price">¥ 72 / 200g</p>
+    </article>
+  </div>
+
+  <h2 id="brew">冲煮参数</h2>
+  <dl>
+    <dt>粉水比</dt><dd>1 : 15（15g 粉 / 225g 水）</dd>
+    <dt>水温</dt><dd>浅烘 92 ℃，中烘 89 ℃</dd>
+    <dt>研磨</dt><dd>中细，白砂糖略粗</dd>
+    <dt>时长</dt><dd>总 2 分 15 秒左右</dd>
+  </dl>
+
+  <h2 id="ship">配送</h2>
+  <p>下单后最近的周三烘焙日发货，顺丰次日达。开封后建议两周内喝完——我们不做充氮包装，那玩意儿的味道你也知道。</p>
+
+  <div class="hint">
+    右下角就是挂件。它跑的是 <code>transport: "demo"</code>，
+    回复由本页前端模拟，<strong>没有任何后端请求</strong>，
+    所以这个演示页离线也能玩。试试问「怎么冲」「多久发货」「推荐一支豆子」。
+    上面的控制条可以实时改主题、主色、位置——都是 CSS 自定义属性与配置项，不是写死的。
+  </div>
+</main>
+
+<footer class="site">© 2025 野径咖啡 · 本页仅用于演示挂件，不是真实店铺</footer>
+
+<!-- 挂件本体。注意：路径直接指向仓库里的源码，演示与交付用的是同一份文件 -->
+<script src="./assets/widget/ai-assistant.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ── 演示用的假后端 ──────────────────────────────────────
+     故意写成和真实 transport 完全一样的签名，用来证明"换后端只换这一层"。
+     接真实模型时把这个函数换成 transports.openai 即可，界面代码一行不用动。 */
+  var ANSWERS = [
+    {
+      match: /(冲|萃取|水温|粉水|研磨|手冲)/,
+      text: '我们的建议参数：\n\n' +
+            '- **粉水比** 1 : 15，15g 粉配 225g 水\n' +
+            '- **水温**：浅烘 92 ℃，中烘 89 ℃。水温低 3 ℃ 酸会更亮，高 3 ℃ 苦会出来\n' +
+            '- **研磨**：中细，比白砂糖略粗一点\n' +
+            '- **总时长** 2 分 15 秒左右；超过 2 分 40 秒说明磨细了\n\n' +
+            '一个容易忽略的点：**先闷蒸 30 秒**，看到粉层不再冒泡再开始注水。'
+    },
+    {
+      match: /(发货|多久|快递|物流|配送|到货)/,
+      text: '我们**每周三烘一次，烘完当天发**，不存豆子。\n\n' +
+            '所以下单时间会影响等几天：\n\n' +
+            '1. 周三之前下单 —— 当周三发出，周四或周五到\n' +
+            '2. 周三之后下单 —— 下周三发出\n\n' +
+            '顺丰次日达。急着要的话在备注里写一声，能插单我们会插。'
+    },
+    {
+      match: /(推荐|哪支|哪款|怎么选|新手|第一次)/,
+      text: '看你平时怎么喝：\n\n' +
+            '- 加奶、做拿铁 → **哥伦比亚 慧兰**（¥86），中烘，焦糖和坚果压得住奶\n' +
+            '- 喝黑咖啡、喜欢酸 → **埃塞 耶加雪菲**（¥98），浅烘，柑橘和白花很干净\n' +
+            '- 想支持国产又想有甜感 → **云南 保山**（¥72），日晒，红糖和桂圆\n\n' +
+            '第一次买建议先来一支 200g 的试试，别一次囤太多——开封两周内喝完最好。'
+    },
+    {
+      match: /(保存|存放|保鲜|受潮|变质)/,
+      text: '三个要点：\n\n' +
+            '1. **别放冰箱**。温差会让豆子反复吸潮，风味掉得比常温快\n' +
+            '2. 原包装的排气阀别封死，让二氧化碳跑出来\n' +
+            '3. 开封后 **两周内**喝完。我们的豆子不加充氮，风味期短是正常的\n\n' +
+            '一次别磨太多粉，**喝之前再磨**，这一步对味道的影响比换设备大。'
+    },
+    {
+      match: /(价格|多少钱|贵|便宜|优惠)/,
+      text: '在售三支的价格：\n\n' +
+            '- **埃塞 耶加雪菲** ¥98 / 200g\n' +
+            '- **哥伦比亚 慧兰** ¥86 / 200g\n' +
+            '- **云南 保山** ¥72 / 200g\n\n' +
+            '买两支减 10 元，三支减 25 元。我们不搞满减套路，就是这个价。'
+    }
+  ];
+
+  var FALLBACK = '这个问题我这边没有现成答案。\n\n' +
+    '不过我可以先说说**这支挂件本身**：它是 `web-ai-assistant` 的单文件实现，' +
+    '样式跑在 Shadow DOM 里，所以压在这个页面上也不会和站点互相污染——' +
+    '你把上面控制条的主题切到「夜」看看。\n\n' +
+    '接真实模型只要在后端加一个代理，把 `transport` 从 `demo` 换成 `openai` 就行，' +
+    '界面代码一行都不用动。';
+
+  WebAIAssistant.defineTransport('demo', async function (ctx) {
+    var q = (ctx.messages[ctx.messages.length - 1] || {}).content || '';
+    var hit = ANSWERS.find(function (a) { return a.match.test(q); });
+    var full = hit ? hit.text : FALLBACK;
+
+    // 真后端是 SSE 流式；这里逐字吐，行为和真实情况一致
+    var acc = '';
+    for (var i = 0; i < full.length; i += 2) {
+      if (ctx.signal && ctx.signal.aborted) throw new DOMException('aborted', 'AbortError');
+      acc += full.slice(i, i + 2);
+      ctx.onDelta(full.slice(i, i + 2), acc);
+      await new Promise(function (r) { setTimeout(r, 9); });
+    }
+    return acc;
+  });
+
+  /* ── 挂载 + 控制条 ─────────────────────────────────────── */
+  var BASE = {
+    transport: 'demo',
+    name: '野径咖啡',
+    greeting: '想聊豆子、冲煮，还是发货时间？',
+    suggestions: ['怎么冲这支耶加雪菲', '下周三之前下单多久能到', '第一次买推荐哪支'],
+    model: 'demo'
+  };
+
+  var ui = {
+    theme: document.getElementById('theme'),
+    accent: document.getElementById('accent'),
+    position: document.getElementById('position'),
+    draggable: document.getElementById('draggable')
+  };
+
+  var widget = null;
+  function rebuild(open) {
+    if (widget) widget.destroy();
+    widget = WebAIAssistant.mount(Object.assign({}, BASE, {
+      theme: ui.theme.value,
+      accent: ui.accent.value,
+      position: ui.position.value,
+      draggable: ui.draggable.checked
+    }));
+    if (open) widget.open();
+  }
+
+  rebuild(true);
+
+  ['theme', 'accent', 'position', 'draggable'].forEach(function (k) {
+    ui[k].addEventListener('change', function () { rebuild(true); });
+  });
+  document.getElementById('toggle').addEventListener('click', function () {
+    widget.openState ? widget.close() : widget.open();
+  });
+  document.getElementById('reset').addEventListener('click', function () {
+    widget.reset();
+    widget.open();
+  });
+})();
+</script>
+</body>
+</html>

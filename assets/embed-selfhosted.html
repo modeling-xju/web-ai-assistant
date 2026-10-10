@@ -1,0 +1,58 @@
+<!--
+  自建挂件 · 静态站挂载模板（路径 B）
+
+  用法：
+    1. 把 ai-assistant.js 和 ai-assistant.css 拷到站点静态目录（两个文件必须放同一目录，
+       JS 会按自己的 src 去找同名的 .css）。样式表是注入 Shadow Root 的，不会影响站点。
+    2. 改下面 <script> 上的 data-* 属性。
+    3. 整段粘到 </body> 之前。
+
+  本地先看到效果：把 data-transport 设成 "echo"，不发任何网络请求也能跑通交互。
+  要接真实模型，把 data-transport 改回 "openai" 并指向你的后端。
+-->
+
+<script src="/static/ai-assistant.js"
+        data-waa
+        data-name="小助"
+        data-transport="openai"
+        data-endpoint="/api/assistant/chat"
+        data-model="qwen-plus"
+
+        data-greeting="关于这台机器，你想问什么？"
+        data-suggestions="保修怎么查|能开发票吗|多久到货"
+
+        data-theme="auto"
+        data-position="right"
+        data-draggable="true"
+        data-auto-open="false"
+        ></script>
+
+<!--
+  data-* 速查
+    data-name         标题栏里的名字
+    data-transport    openai | dashscopeApp | echo，或你自己 defineTransport 注册的名字
+    data-endpoint     后端地址（openai 协议就是这个接口）
+    data-model        模型名
+    data-app-id       百炼应用 ID（transport=dashscopeApp 时用）
+    data-greeting     空态问候语。按业务亲手写
+    data-suggestions  空态问题示例，用 | 分隔，2–4 条
+    data-theme        auto | light | dark
+    data-position     right | left
+    data-draggable    true | false
+    data-auto-open    true | false（默认 false，建议保持）
+    data-accent       主色，如 #0F766E
+    data-radius       圆角，如 3px
+    data-z-index      默认 2147483000
+    data-persist      true | false，会话是否保留在 sessionStorage
+    data-css-url      样式表地址。默认按本 JS 的 src 自动找同目录同名 .css；
+                      打包过的 SPA 里猜不到时（script.src 是带哈希的 bundle 名）
+                      必须显式给，否则挂件会以无样式状态渲染（控制台会有 warn）
+
+  需要更细的控制（extraInfo / onBeforeSend / 自定义 transport）就用 JS 挂载，见
+  references/self-hosted-widget.md。
+-->
+
+<!--
+  ⚠ 不要做的事：把 API Key 写在这里。
+    静态页面是公开的，写进去等于公开。key 放后端，前端打自己的接口。
+-->
