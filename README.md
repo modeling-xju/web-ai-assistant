@@ -1,17 +1,13 @@
 # web-ai-assistant
 
-给网站加一个 AI 助手挂件。
+<img src="docs/hero.svg" alt="挂件演示 / widget demo" width="800">
 
-- 在线演示：<https://modeling-xju.github.io/web-ai-assistant/>
-- 这是一个 Agent Skill，也可以只拿里面的挂件源码用
-- MIT
-
-<img src="docs/hero.svg" alt="挂件演示" width="800">
-
-下面中英文都在同一个文件里，点标题即可切换。
+中英文在同一个文件里，点标题切换。 Both languages live in this file — click a title to switch.
 
 <details open>
 <summary><b>中文</b></summary>
+
+给网站加一个 AI 助手挂件。零依赖、不需要构建，断网也有兜底。在线演示：<https://modeling-xju.github.io/web-ai-assistant/>。这是一个 Agent Skill，也可以只拿里面的挂件源码用。
 
 ## 装
 
@@ -82,7 +78,7 @@
 
 ## 挂件带什么
 
-点面板外面收起、多会话历史、跨访问的记忆、热词、知识库引用、11 家大模型 API 预设。这些是配置项，不是要你写的代码。
+点面板外面收起、多会话历史、跨访问的记忆、热词、知识库引用、离线兜底、11 家大模型 API 预设。这些是配置项，不是要你写的代码。
 
 **记忆**是持久化的，每次请求会拼成一条 system 消息带上。用法：
 
@@ -96,7 +92,20 @@ widget.remember({ 门店: '杭州西湖店' });
 WebAIAssistant.mount({ hotWords: ['保修怎么查'], hotWordsUrl: '/api/hot-words' });
 ```
 
-**知识库**：挂件不实现检索，它负责把检索接进来、把命中的资料显示出来。后端返回里带 `references`（或 `citations` / `sources` / `search_info`）就会渲染成可展开的「参考资料」。
+**知识库（RAG）是干什么的**：模型只知道自己训练时见过的东西，问它「你们 A1 保修几年」它要么说不知道，要么编一个。RAG 就是提问时先去你的文档里检索出相关片段，连同问题一起塞给模型，让它照着资料回答，并把来源摆出来给用户核对。
+
+挂件**不做检索**——检索要在你的后端或百炼控制台里配。它管两件事：把 `knowledge` 配置下发给后端，以及把返回的 `references`（或 `citations` / `sources` / `search_info`）渲染成可展开的「参考资料」。没用知识库就完全不用管这一项。
+
+**离线**：断网时状态栏显示「离线」，不会转圈转到天荒地老。能配一组本地问答，命中就直接答（不联网），并标上「离线应答」；答不了的给一句人话，记住这条问题，恢复联网自动补发。
+
+```js
+WebAIAssistant.mount({
+  offline: {
+    answers: [{ match: /保修|维修/, reply: '整机保修 3 年，机芯 5 年。' }],
+    resend: true
+  }
+});
+```
 
 **大模型**用 `provider` 预设省去抄地址：
 
@@ -144,6 +153,8 @@ evals/                          评测用例与站点样本
 
 <details>
 <summary><b>English</b></summary>
+
+Embed an AI assistant into a website. Zero dependencies, no build step, and a fallback when the network is down. Live demo: <https://modeling-xju.github.io/web-ai-assistant/>. This is an Agent Skill, or you can just take the widget source out of it.
 
 ## Install
 
@@ -214,7 +225,7 @@ Rebind with `hotkeys: { toggle: 'mod+shift+k' }`, or turn the whole set off with
 
 ## What the widget ships with
 
-Click-outside to collapse, multiple conversations, persistent memory, hot words, knowledge-base citations, and eleven LLM provider presets. All of it is configuration, not code you have to write.
+Click-outside to collapse, multiple conversations, persistent memory, hot words, knowledge-base citations, offline fallbacks, and eleven LLM provider presets. All of it is configuration, not code you have to write.
 
 **Memory** is persisted and rides along as a system message on every request:
 
@@ -228,7 +239,20 @@ widget.remember({ store: 'Hangzhou West Lake' });
 WebAIAssistant.mount({ hotWords: ['warranty'], hotWordsUrl: '/api/hot-words' });
 ```
 
-**Knowledge base**: the widget doesn't do retrieval. It wires retrieval in and shows what came back. If your backend response carries `references` (or `citations` / `sources` / `search_info`), they render as an expandable "Sources" block.
+**Knowledge base (RAG), and why you'd want it.** A model only knows what it saw during training. Ask it "how long is the warranty on your A1" and it will either say it doesn't know or make something up. RAG means: at question time, retrieve the relevant passages from your own documents, hand them to the model along with the question, and show the sources so the user can check.
+
+The widget **does not do retrieval** — that happens in your backend or in the Bailian console. It does two things: passes the `knowledge` config down to your backend, and renders the returned `references` (or `citations` / `sources` / `search_info`) as an expandable "Sources" block. If you don't use a knowledge base, none of this applies.
+
+**Offline.** With no connection the status line reads "Offline" instead of spinning forever. You can configure a local FAQ that answers without any network at all (marked "Offline answer"), and when it can't answer, the widget says so in plain language, remembers the question, and resends it once the connection is back.
+
+```js
+WebAIAssistant.mount({
+  offline: {
+    answers: [{ match: /warranty|repair/, reply: 'Three years on the unit, five on the mechanism.' }],
+    resend: true
+  }
+});
+```
 
 **Models** — `provider` presets save you from copying endpoints:
 
@@ -277,3 +301,4 @@ The reasoning is in `references/design.md`.
 ## License
 
 MIT
+

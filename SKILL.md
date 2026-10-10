@@ -88,6 +88,7 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 | "要能记住用户" | 用 `widget.remember({...})` 写入，随请求自动带上。该记稳定事实，别记临时状态 |
 | "要热词 / 热门问题" | `hotWords` 静态兜底 + `hotWordsUrl` 从后端拉（`{items:[...]}`），见 `references/self-hosted-widget.md` |
 | "要接知识库 / 要能引用资料" | 挂件负责**显示**引用、**下发**配置；检索在你自己后端做。见 `self-hosted-widget.md` 的「知识库与引用」 |
+| "用户断网了怎么办" | `offline.answers` 配几条本地问答（命中即答、不发请求、标「离线应答」），答不了的给一句人话并在恢复联网后自动补发。见 `self-hosted-widget.md` 的「离线」 |
 | "要能按快捷键唤起" | 默认就有：`mod+K` 开合、`mod+/` 看快捷键表、`Alt+↑↓` 切会话。要改传 `hotkeys`，整块关掉传 `shortcuts: false`。**剪贴板那套（`mod+C/X/V/A/Z`）挂件不绑也不拦**——别去动它 |
 | "直接接某家大模型 API" | 用 `provider` 预设（OpenAI / 百炼 / DeepSeek / Kimi / GLM / SiliconFlow / OpenRouter / Ollama / vLLM / Anthropic）。**但先解决 key 放哪**——见下 |
 
@@ -123,7 +124,7 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 - [ ] 快捷键：`mod+K` 能开合；焦点在**站点自己的输入框**里时不被抢（用真实按键测，合成事件测不出来）。
 - [ ] 剪贴板快捷键（`mod+C/X/V/A/Z`）在输入框里照常工作，没被挂件 `preventDefault`。
 - [ ] 面板内的文字样式和站点完全一致/完全不冲突：在挂件开启前后各取一次站点某个关键元素的 `getComputedStyle`，对比无变化。
-- [ ] 断网或后端 500 时的表现是人话错误 + 重试，不是白屏、不是死转。
+- [ ] 断网或后端 500 时的表现是人话错误 + 重试，不是白屏、不是死转。配了 `offline.answers` 的话，断网时命中的那条要能直接答出来（用浏览器 DevTools 的 Offline 勾选实测）。
 - [ ] 移动端（≤400px 宽）能正常用，输入框不被键盘顶掉，面板可关闭。
 - [ ] **打包 / SPA 场景**：样式表确实被定位到了。打包后 `script.src` 会变成带哈希的 bundle 名，挂件猜不到同名 `.css`，要显式传 `cssUrl`。没样式的挂件照样"能用"，所以肉眼很容易漏掉。
 - [ ] 刷新页面后会话行为符合预期（按需求选可恢复或清零）。

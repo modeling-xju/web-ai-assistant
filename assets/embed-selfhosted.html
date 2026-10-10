@@ -8,7 +8,8 @@
     3. 整段粘到 </body> 之前。
 
   挂件自带这些能力，不用自己实现：点击面板外部收起、多会话历史与「新对话」、
-  跨访问的记忆、热词（可远程拉取）、知识库引用展示。配置见下面速查表。
+  跨访问的记忆、热词（可远程拉取）、知识库引用展示、断网兜底与恢复后补发。
+  配置见下面速查表。
 
   本地先看到效果：把 data-transport 设成 "echo"，不发任何网络请求也能跑通交互。
   要接真实模型，把 data-transport 改回 "openai" 并指向你的后端。
@@ -56,6 +57,7 @@
     data-history      true | false，是否启用多会话历史
     data-close-on-outside-click  true（默认）| false
     data-shortcuts    true（默认）| false，快捷键总开关
+    data-offline      false 可关掉离线兜底（本地问答 + 联网后补发）；默认开着
     data-outside-ignore  站点自己的弹层选择器（逗号分隔），点它不算"外部点击"
     data-theme        auto | light | dark
     data-position     right | left

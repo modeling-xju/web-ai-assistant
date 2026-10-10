@@ -215,8 +215,8 @@ bundle 名，猜不到样式表，挂件就会以**无样式状态**渲染。这
 | `headers` / `body` | — | 附加到请求上的头与字段（例如自研网关要的租户头） |
 | `retrieve` | — | `async (query, {messages}) => [{title,url,snippet}]`。前端检索钩子，适合知识库就在同源后端的场景 |
 | `knowledge` | — | 知识库配置（`{id, name, topK, mode}`），会随请求下发给后端 |
-| `memory` | `true` | 是否启用记忆（持久化 + 随请求发送） |
-| `memoryForward` | `'system'` | `'system'`：把记忆拼成一条 system 消息（兼容性最好）；`'body'`：作为 `memory` 字段放进请求体，给自研后端用 |
+| `offline` | 见「离线」一节 | 断网时的本地问答与补发 |
+| `memory` | `true` | 是否启用记忆（持久化 + 随请求发送） || `memoryForward` | `'system'` | `'system'`：把记忆拼成一条 system 消息（兼容性最好）；`'body'`：作为 `memory` 字段放进请求体，给自研后端用 |
 | `memorySystem` | `true` | 是否用 system 消息承载记忆 |
 | `memoryPrompt` | 见源码 | 记忆那段 system 消息的开头语 |
 | `history` | `true` | 是否启用多会话历史 |
@@ -379,6 +379,38 @@ WebAIAssistant.mount({ transport: 'anthropic', endpoint: '…', model: '…', ap
 后端只要把 `{messages}` 转成上游协议、把 SSE 原样转发回来即可，`transports.openai` 会自动解析。FastAPI / Node 两份现成实现见上面「后端代理」一节。
 
 从浏览器**直连** Anthropic 需要额外的 `anthropic-dangerous-direct-browser-access: true` 头（挂件在你传 `allowBrowserDirect: true` 时会自动带上），而且服务商普遍不建议这么做——同样请走后端代理。
+
+## 离线
+
+访客在电梯里、地铁里、弱网酒店里都会断网。默认行为是状态栏显示「离线」并给一句人话，而不是转圈转到天荒地老。
+
+三层兜底：
+
+1. **本地问答** —— `offline.answers` 里配的 `{match, reply}` 命中就直接答，**一个请求都不发**，消息上标「离线应答」。
+2. **答不了** —— 给一句人话，并记住这条问题。
+3. **恢复联网** —— `online` 事件触发后自动补发，占位消息被真实回答替换掉。
+
+```js
+WebAIAssistant.mount({
+  offline: {
+    enabled: true,
+    answers: [
+      { match: /保修|维修/, reply: '整机保修 3 年，机芯 5 年，以发票日期为准。' },
+      { match: '发票', reply: '支持电子发票，下单时填抬头即可。' }
+    ],
+    resend: true,
+    fallback: ''      // 留空用内置文案
+  }
+});
+```
+
+三个取舍，改之前先理解：
+
+- **只记一条待补发的问题**，后来者覆盖先前的。做成队列看着更"完整"，但把多条问题一条条插回历史里重放会把上下文搅乱，答出来的东西反而更差。更早没答上的问题仍留在对话里，用户看得见。
+- **`navigator.onLine` 只反映网卡状态。** 代理挂了它照样是 `true`，所以它只能用来**提前拦截**，不能替代请求失败的处理——请求真的失败时走的还是原来那套错误气泡 + 重试。
+- **本地回答必须标出来。** 兜底文案被当成模型回答，比不回答更糟。
+
+整个功能可以关掉：`offline: { enabled: false }`，静态站上也可以用 `data-offline="false"`。
 
 ## 知识库与引用（RAG）
 

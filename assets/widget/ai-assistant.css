@@ -570,6 +570,24 @@
   color: var(--waa-muted);
 }
 
+/* CSS 里没法读 JS 的文案表，所以靠 data-locale 分一份 */
+.waa[data-locale="en"] .waa-msg.is-stopped .waa-msg__body::after { content: "Stopped"; }
+
+/* 离线兜底/本地作答的标记：不能让人把它当成模型回答 */
+.waa-msg__tag {
+  flex: none;
+  align-self: flex-start;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-family: var(--waa-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--waa-muted);
+  border: 1px solid var(--waa-line);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
 /* ── 错误态 ────────────────────────────────────────────────── */
 
 .waa-msg--error .waa-msg__rule { background: var(--waa-accent); }

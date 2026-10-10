@@ -7,7 +7,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '2.0.0';
+  var VERSION = '2.1.0';
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   /* ────────────────────────────────────────────────────────────
@@ -72,7 +72,8 @@
    * 先抽出代码块占位，再转义剩余文本，最后只对白名单语法做替换。
    * 顺序很关键：先转义再替换，否则用户/AI 输出里的 <img onerror> 能直接执行。
    */
-  function renderMarkdown(src) {
+  function renderMarkdown(src, L) {
+    L = L || { copyBtn: '复制', copied: '已复制', copyFail: '复制失败' };
     var blocks = [];
     var text = String(src == null ? '' : src);
 
@@ -109,7 +110,9 @@
           '<div class="waa-code"><div class="waa-code__bar"><span class="waa-code__lang">' +
           escapeHtml(b.lang || 'code') +
           '</span><button type="button" class="waa-code__copy" data-copy="' +
-          escapeHtml(b.code) + '">复制</button></div><pre><code>' +
+          escapeHtml(b.code) + '" data-copied="' + escapeHtml(L.copied) +
+          '" data-fail="' + escapeHtml(L.copyFail) + '">' + escapeHtml(L.copyBtn) +
+          '</button></div><pre><code>' +
           escapeHtml(b.code) + '</code></pre></div>'
         );
         return;
@@ -466,7 +469,7 @@
   }
 
   Store.prototype._blank = function () {
-    return { threads: [], activeId: null, memory: {}, ui: {} };
+    return { threads: [], activeId: null, memory: {}, ui: {}, pending: null };
   };
 
   Store.prototype._read = function () {
@@ -480,6 +483,7 @@
         threads: Array.isArray(s.threads) ? s.threads : b.threads,
         activeId: s.activeId || null,
         memory: (s.memory && typeof s.memory === 'object') ? s.memory : b.memory,
+        pending: s.pending || null,
         ui: (s.ui && typeof s.ui === 'object') ? s.ui : b.ui
       };
     } catch (e) { return this._blank(); }
@@ -510,6 +514,10 @@
       shortcuts: '快捷键', back: '返回',
       shortcutsNote: '站点自己的输入框里不会抢这些键。按 Esc 关闭。',
       nativeGroup: '输入框里用系统默认键（挂件不绑定、不拦截）',
+      offlineLabel: '离线', offlineBadge: '离线应答', resending: '补发中',
+      offlineFallback: '现在没有网络连接。这个问题我已经记下，联网后会自动补发。',
+      offlineFallbackNoQueue: '现在没有网络连接，暂时没法回答这个问题。',
+      copyBtn: '复制', copied: '已复制', copyFail: '复制失败', stopped: '已停止',
       memory: '记忆', memoryEmpty: '还没有记住任何信息',
       memoryClear: '清空记忆', clearAll: '清空全部', refs: '参考资料',
       emptyTitle: '新对话', untitled: '新对话', delete: '删除', justNow: '刚刚'
@@ -522,6 +530,10 @@
       shortcuts: 'Shortcuts', back: 'Back',
       shortcutsNote: 'These keys are not captured while typing in the site\u2019s own inputs. Press Esc to close.',
       nativeGroup: 'System keys inside the input (the widget neither binds nor intercepts them)',
+      offlineLabel: 'Offline', offlineBadge: 'Offline answer', resending: 'Resending',
+      offlineFallback: 'No network right now. I\u2019ve kept your question and will send it once the connection is back.',
+      offlineFallbackNoQueue: 'No network right now, so I can\u2019t answer this one yet.',
+      copyBtn: 'Copy', copied: 'Copied', copyFail: 'Copy failed', stopped: 'Stopped',
       memory: 'Memory', memoryEmpty: 'Nothing remembered yet',
       memoryClear: 'Clear memory', clearAll: 'Clear all', refs: 'Sources',
       emptyTitle: 'New chat', untitled: 'New chat', delete: 'Delete', justNow: 'just now'
@@ -746,6 +758,22 @@
     return RESERVED.indexOf(normCombo(combo)) !== -1;
   }
 
+  /**
+   * 离线行为。
+   * 访客在地铁里、电梯里、弱网酒店里都会碰到，而"转圈转到天荒地老"是最差的回应。
+   * 三层：本地问答命中就直接答 → 答不了就给一句人话并记住这条问题 → 恢复联网自动补发。
+   *
+   * 只保留**一条**待补发的问题（后来者覆盖先前的）。做成队列看起来更"完整"，
+   * 但一条条插回历史里重放会把上下文搅乱；只留最新一条是能保证正确的做法，
+   * 更早没答上的问题仍留在对话里，用户看得见。
+   */
+  var OFFLINE_DEFAULTS = {
+    enabled: true,
+    answers: [],      // [{ match: '正则或子串', reply: '...' }]
+    resend: true,     // 恢复联网后自动补发那条没答上的问题
+    fallback: ''      // 留空用内置文案
+  };
+
   var DEFAULTS = {
     name: '助手',
     locale: 'zh',
@@ -779,6 +807,7 @@
     shortcuts: true,          // 总开关
     hotkeys: null,            // { toggle: 'mod+shift+k', … } 按动作名覆盖默认组合键
     shortcutHelp: true,       // 是否提供快捷键help面板
+    offline: null,            // 见 OFFLINE_DEFAULTS
 
     storage: 'session',       // session | local | none
     storageKey: 'waa',
@@ -826,6 +855,9 @@
     this.copy = COPY[this.opts.locale] || COPY.zh;
 
     this.store = new Store(this.opts);
+    // offline 要单独深合并：Object.assign 会把整个对象换掉，用户只传 answers 时
+    // enabled / queue 这些就会被抹成 undefined
+    this.opts.offline = Object.assign({}, OFFLINE_DEFAULTS, this.opts.offline || {});
     this.memory = this.store.state.memory || {};
     this.hot = normalizeHot(this.opts.hotWords);
     this.busy = false;
@@ -1002,6 +1034,7 @@
     if (this.opts.radius) vars.push('--waa-radius:' + this.opts.radius);
     this.el = h('div', {
       class: 'waa', 'data-theme': this.opts.theme, 'data-position': this.opts.position,
+      'data-locale': this.opts.locale,
       style: vars.join(';')
     });
     root.appendChild(this.el);
@@ -1167,6 +1200,7 @@
   Widget.prototype._bindGlobal = function () {
     var self = this;
     this._bindShortcuts();
+    this._bindNetwork();
 
     // 点到挂件以外的任何地方就关上。
     // Shadow DOM 会把内部点击的 target 重定向成宿主元素，所以 contains 判断是准的。
@@ -1461,7 +1495,7 @@
     var node = h('div', { class: 'waa-msg waa-msg--' + m.role });
     if (m.role === 'assistant') node.appendChild(h('div', { class: 'waa-msg__rule' }));
     var body = h('div', { class: 'waa-msg__body' });
-    if (m.role === 'assistant') body.innerHTML = renderMarkdown(m.content || '');
+    if (m.role === 'assistant') body.innerHTML = renderMarkdown(m.content || '', this.copy);
     else body.textContent = m.content || '';
     node.appendChild(body);
 
@@ -1469,6 +1503,8 @@
     if (m.role === 'assistant' && m.references && m.references.length) {
       body.appendChild(this._refsBlock(m.references));
     }
+    // 离线时本地作答的，标出来——别让访客把兜底文案当成模型回答
+    if (m.local) node.appendChild(h('span', { class: 'waa-msg__tag', text: this.copy.offlineBadge }));
     if (m.stopped) node.classList.add('is-stopped');
     this.log.appendChild(node);
     return { node: node, body: body };
@@ -1755,7 +1791,123 @@
     this.thread.messages.push({ role: 'user', content: v });
     this._renderThread();
     this._commit();
+    if (this._isOffline() && this.opts.offline.enabled) { this._answerOffline(v); return; }
     this._run();
+  };
+
+  /* ── 离线 ─────────────────────────────────────────────────── */
+
+  Widget.prototype._isOffline = function () {
+    if (!this.opts.offline.enabled) return false;
+    // navigator.onLine 只反映"网卡有没有连上"，代理挂了它照样是 true。
+    // 所以它只能用来提前拦截，不能替代请求失败的处理。
+    return !!(global.navigator && global.navigator.onLine === false);
+  };
+
+  Widget.prototype._matchOffline = function (text) {
+    var list = this.opts.offline.answers || [];
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (!a || !a.reply) continue;
+      if (a.match instanceof RegExp) {
+        if (a.match.test(text)) return a;
+      } else if (typeof a.match === 'string' && a.match &&
+                 text.toLowerCase().indexOf(a.match.toLowerCase()) !== -1) {
+        return a;
+      }
+    }
+    return null;
+  };
+
+  /** 离线时：能本地答就答；答不了就给一句人话，并记住这条问题等联网补发 */
+  Widget.prototype._answerOffline = function (question) {
+    var off = this.opts.offline;
+    var hit = this._matchOffline(question);
+    if (hit) {
+      this.thread.messages.push({ role: 'assistant', content: hit.reply, local: true });
+    } else {
+      if (!off.resend) {
+        this.thread.messages.push({
+          role: 'assistant', local: true,
+          content: off.fallback || this.copy.offlineFallbackNoQueue
+        });
+      } else {
+        // 上一条还没补发的问题作废：它的占位消息撤掉，问题本身留在对话里
+        this._dropPending();
+        this.thread.messages.push({
+          role: 'assistant', local: true, pending: true,
+          content: off.fallback || this.copy.offlineFallback
+        });
+        this.store.state.pending = {
+          content: question,
+          threadId: this.thread.id,
+          at: Date.now()
+        };
+        this.store.save();
+      }
+    }
+    this._renderThread();
+    this._commit();
+    this._syncNetState();
+  };
+
+  /** 撤掉待补发标记和它的占位消息（不动用户那条提问） */
+  Widget.prototype._dropPending = function () {
+    var s = this.store.state;
+    if (!s.pending) return;
+    s.pending = null;
+    this.store.save();
+    for (var i = this.thread.messages.length - 1; i >= 0; i--) {
+      if (this.thread.messages[i].pending) { this.thread.messages.splice(i, 1); break; }
+    }
+  };
+
+  Widget.prototype.hasPendingQuestion = function () {
+    return !!this.store.state.pending;
+  };
+
+  /** 恢复联网后补发：把占位消息截掉，末尾回到那条提问，正常走一遍请求 */
+  Widget.prototype._resendPending = function () {
+    var s = this.store.state;
+    var p = s.pending;
+    if (!p || this.busy || this._isOffline()) return;
+    s.pending = null;
+    this.store.save();
+
+    if (p.threadId && p.threadId !== this.thread.id && !this.openThread(p.threadId)) return;
+
+    var msgs = this.thread.messages;
+    var cut = -1;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].pending) { cut = i; break; }
+    }
+    // 占位消息没了（用户删了会话或手动重试过）就别乱补
+    if (cut === -1) { this._renderThread(); return; }
+    msgs.length = cut;
+    this._renderThread();
+    this._commit();
+
+    this._setHeadMeta(this.copy.resending, 'busy');
+    this._run();
+  };
+
+  Widget.prototype._syncNetState = function () {
+    if (this.busy) return;
+    if (this._isOffline()) this._setHeadMeta(this.copy.offlineLabel, 'error');
+    else this._setHeadMeta(this.copy.online);
+  };
+
+  Widget.prototype._bindNetwork = function () {
+    var self = this;
+    this._onOnline = function () {
+      self._syncNetState();
+      if (self.hasPendingQuestion()) self._resendPending();
+    };
+    this._onOffline = function () { self._syncNetState(); };
+    global.addEventListener('online', this._onOnline);
+    global.addEventListener('offline', this._onOffline);
+    // 挂载时如果本来就是断网状态，别显示"在线"骗人
+    if (this._isOffline()) this._setHeadMeta(this.copy.offlineLabel, 'error');
   };
 
   Widget.prototype._submit = function () { this.send(); };
@@ -1796,7 +1948,7 @@
     var refs = [];
     ctx.onDelta = function (_delta, full) {
       acc = full != null ? full : acc + _delta;
-      target.body.innerHTML = renderMarkdown(acc);
+      target.body.innerHTML = renderMarkdown(acc, self.copy);
       self._scroll();
     };
     ctx.onReferences = function (list) {
@@ -1868,6 +2020,7 @@
       this.abort = null;
       this.sendBtn.classList.remove('is-stop');
       this.sendBtn.setAttribute('aria-label', this.copy.send);
+      // 待补发的那条已经自己跑完，不用再排队
     }
   };
 
@@ -1902,6 +2055,8 @@
   Widget.prototype.destroy = function () {
     document.removeEventListener('keydown', this._onKeydown);
     document.removeEventListener('pointerdown', this._onDocPointerDown, true);
+    global.removeEventListener('online', this._onOnline);
+    global.removeEventListener('offline', this._onOffline);
     if (this._hotTimer) clearInterval(this._hotTimer);
     if (this._teardownDrag) this._teardownDrag();
     if (this.host && this.host.parentNode) this.host.parentNode.removeChild(this.host);
@@ -1952,8 +2107,10 @@
     if (!btn) return;
     var code = btn.getAttribute('data-copy') || '';
     var old = btn.textContent;
+    var okText = btn.getAttribute('data-copied') || '已复制';
+    var failText = btn.getAttribute('data-fail') || '复制失败';
     writeClipboard(code).then(function (ok) {
-      btn.textContent = ok ? '已复制' : '复制失败';
+      btn.textContent = ok ? okText : failText;
       setTimeout(function () { btn.textContent = old; }, 1200);
     });
   }
@@ -2001,6 +2158,7 @@
         autoOpen: d.autoOpen === 'true',
         closeOnOutsideClick: d.closeOnOutsideClick !== 'false',
         shortcuts: d.shortcuts !== 'false',
+        offline: d.offline === 'false' ? { enabled: false } : null,
         outsideIgnore: d.outsideIgnore || null,
         storage: d.storage || (d.persist === 'false' ? 'none' : (d.persist === 'true' ? 'local' : DEFAULTS.storage)),
         history: d.history !== 'false',
