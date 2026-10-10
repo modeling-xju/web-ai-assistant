@@ -11,7 +11,7 @@ Hang a conversational AI assistant onto a site the user already has, **without b
 
 1. **It comes up** — a visitor can see the entry point on the page, open it, type, and get a reply.
 2. **It doesn't fight** — the widget's styles and scripts must not pollute the site, and the site's styles and scripts must not break the widget.
-3. **It can be re-plumbed** — the model vendor, the backend URL, the keys: everything that will change tomorrow must not be welded into the code.
+3. **It can be re-plumbed** — the model vendor, the backend URL, the keys; everything that is going to change tomorrow must not be welded into the code.
 
 ## Settle three questions before you touch code
 
@@ -96,7 +96,7 @@ The right line here is "预设我可以用，但 key 得放后端，前端打你
 (`self-hosted-widget.md` has both the FastAPI and the Node version under 后端代理 (backend proxy)).
 Only local development, an intranet, or a keyless setup like Ollama may connect directly.
 
-Before you write code, confirm that none of this actually already satisfies the need — rewriting capabilities that already exist is the most common waste on this route.
+Before you write a line of code, confirm that none of the above already covers what's being asked for — rewriting capabilities that already exist is the most common waste on this route.
 
 ## Hard constraints shared by both routes
 
@@ -123,7 +123,7 @@ Test every line below for real before you deliver, and put the results in your h
 - [ ] Shortcuts: `mod+K` toggles; the key is **not** stolen while focus is in **the site's own input** (test with real key presses — synthetic events won't catch this).
 - [ ] Text styles inside the panel match the site exactly or don't conflict at all: sample `getComputedStyle` on one key site element before and after the widget appears, and diff them — no change.
 - [ ] Offline, or a 500 from the backend, shows a human-readable error plus retry — not a blank screen, not an endless spinner.
-- [ ] It works on mobile (≤400px wide), the input isn't shoved off by the keyboard, and the panel can be closed.
+- [ ] It works on mobile (≤400px wide), the keyboard doesn't shove the input off-screen, and the panel can be closed.
 - [ ] **Bundled / SPA case**: the stylesheet really did get located. After bundling, `script.src` becomes a hashed bundle name, so the widget can't guess a same-named `.css` — pass `cssUrl` explicitly. An unstyled widget still "works", which is exactly why the eye misses it.
 - [ ] After a page reload the conversation behaves the way the requirement says (restored or cleared, whichever was asked for).
 - [ ] Keyboard: Tab reaches the panel, Esc closes it, focus doesn't escape onto the page behind.

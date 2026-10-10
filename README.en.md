@@ -14,7 +14,7 @@ This is an **Agent Skill** (a skill pack for AI coding assistants) — or you ca
 
 ## What it solves
 
-This skill grew out of Alibaba Cloud's tutorial 《在网站上增加一个 AI 助手》 ("Adding an AI assistant to a website"). That tutorial is a 4-step chain (create a Bailian app → grab credentials → create an AppFlow assistant → embed it in the site), but **very little of it can actually be automated** — someone has to click through the console, and everything left over is the business of "paste code into your site", which is exactly the part that goes wrong most:
+This skill grew out of Alibaba Cloud's tutorial 《在网站上增加一个 AI 助手》 ("Adding an AI assistant to a website"). That tutorial is a 4-step chain (create a Bailian app → grab credentials → create an AppFlow assistant → embed it in the site), but **very little of it can actually be automated** — someone has to click through the console, and everything left over is the job of "pasting code into your site", which is precisely the part that goes wrong most often:
 
 | How it typically goes wrong | What you get |
 |---|---|
@@ -46,7 +46,7 @@ The widget on the self-hosted route is **deliverable as-is**, not "a chat bubble
 |---|---|
 | **Close on outside click** | Click anywhere outside the panel to collapse it; clicks inside the panel, on the launcher, or inside the history drawer never close it by mistake. The site's own overlays can be exempted with `outsideIgnore` |
 | **Hotkeys** | `Ctrl/⌘ + K` toggles, `Ctrl/⌘ + /` opens the shortcut sheet, `Alt + ↑↓` switches conversations, `↑` recalls your previous question. It **doesn't steal the key** while focus is in the site's own input. Everything is rebindable |
-| **Multiple conversations** | A 新对话 (New chat) button plus a history drawer: switch, delete, clear. Three storage modes: `session` / `local` / `none` |
+| **Multiple conversations** | A **New chat** button plus a history drawer: switch, delete, clear. Three storage modes: `session` / `local` / `none` |
 | **Memory** | Stable facts about the visitor are persisted and attached automatically as a system message on every request; visible in the drawer, clearable in one click |
 | **Hot words** | A static fallback plus a fetch from your backend (`hotWordsUrl`), with heat counts, optionally pinned above the input |
 | **Direct LLM API** | 11 provider presets (OpenAI / 百炼 (Bailian) / DeepSeek / Kimi / GLM / SiliconFlow / OpenRouter / Ollama / vLLM / Anthropic). Anthropic goes through its own protocol adapter |
@@ -122,8 +122,8 @@ The backend only has to translate `{messages}` into the upstream protocol and pi
 Run it once before you deliver — it catches unreplaced placeholders, a domain left as a relative path, bad `init` timing, a leaked key, and a stylesheet that never got copied:
 
 ```bash
-bun scripts/verify-embed.mjs ./你的站点           # human-readable
-bun scripts/verify-embed.mjs ./你的站点 --json    # machine-readable; exit code 1 when there are errors
+bun scripts/verify-embed.mjs ./your-site           # human-readable
+bun scripts/verify-embed.mjs ./your-site --json    # machine-readable; exit code 1 when there are errors
 ```
 
 ## Layout
