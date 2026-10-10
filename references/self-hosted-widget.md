@@ -492,7 +492,7 @@ knowledge: { id: 'kb_yejing', name: '野径咖啡知识库', topK: 4, mode: 'alw
 
 ## 关于 `extraInfo` 与 `onBeforeSend`
 
-后端拿到业务上下文才能答得具体。默认实现里 `extraInfo` 会被合并进请求体（放在 `body` 里一起 POST）。如果后端是自研的，记得在代理里把它取出来用：
+后端拿到业务上下文才能答得具体。`extraInfo` 会被合并进请求体（放在 `body` 里一起 POST）；**只有传了 `extraInfo` 才会带这个字段** —— 直连第三方上游时多一个未知字段会被 400 拒掉，所以不传就完全不会出现在请求里。如果后端是自研的，记得在代理里把它取出来用：
 
 ```js
 const { messages, extraInfo } = req.body;

@@ -7,7 +7,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '2.1.0';
+  var VERSION = '2.1.1';
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   /* ────────────────────────────────────────────────────────────
@@ -256,6 +256,19 @@
     }
     if (ctx.knowledge && ctx.knowledge.enabled !== false) {
       body.knowledge = ctx.knowledge;
+    }
+
+    // 业务上下文随每一次请求下发（文档里承诺过的行为）：宿主用它告诉自有后端
+    // "用户此刻在哪一页、在看哪个商品/仓库"，后端才能据此检索知识库或答得具体。
+    // **只有调用方显式传了 extraInfo 才发** —— 直连第三方上游时多一个未知字段会被
+    // 400 拒掉，所以不能像 knowledge 那样无条件塞。
+    if (c.extraInfo) {
+      var extra = null;
+      try { extra = (typeof c.extraInfo === 'function') ? c.extraInfo() : c.extraInfo; }
+      catch (e) { extra = null; }
+      if (extra && typeof extra === 'object' && Object.keys(extra).length) {
+        body.extraInfo = extra;
+      }
     }
 
     var res = await fetch(c.endpoint, {
