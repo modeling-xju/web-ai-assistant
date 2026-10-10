@@ -7,6 +7,9 @@
     2. 改下面 <script> 上的 data-* 属性。
     3. 整段粘到 </body> 之前。
 
+  挂件自带这些能力，不用自己实现：点击面板外部收起、多会话历史与「新对话」、
+  跨访问的记忆、热词（可远程拉取）、知识库引用展示。配置见下面速查表。
+
   本地先看到效果：把 data-transport 设成 "echo"，不发任何网络请求也能跑通交互。
   要接真实模型，把 data-transport 改回 "openai" 并指向你的后端。
 -->
@@ -20,6 +23,12 @@
 
         data-greeting="关于这台机器，你想问什么？"
         data-suggestions="保修怎么查|能开发票吗|多久到货"
+        data-hot-words-url="/api/hot-words"
+
+        data-storage="local"
+        data-close-on-outside-click="true"
+        data-memory="true"
+        data-history="true"
 
         data-theme="auto"
         data-position="right"
@@ -36,6 +45,13 @@
     data-app-id       百炼应用 ID（transport=dashscopeApp 时用）
     data-greeting     空态问候语。按业务亲手写
     data-suggestions  空态问题示例，用 | 分隔，2–4 条
+    data-hot-words    热词，用 | 分隔（静态兜底）
+    data-hot-words-url 从后端拉热词（返回数组或 {items:[]}），拉不到就用上面那份
+    data-hot-words-placement  empty | composer | both | off，默认 both
+    data-storage      session（默认，关标签页就清）| local（跨访问保留）| none
+    data-memory       true | false，是否启用记忆
+    data-history      true | false，是否启用多会话历史
+    data-close-on-outside-click  true（默认）| false
     data-theme        auto | light | dark
     data-position     right | left
     data-draggable    true | false
@@ -43,13 +59,10 @@
     data-accent       主色，如 #0F766E
     data-radius       圆角，如 3px
     data-z-index      默认 2147483000
-    data-persist      true | false，会话是否保留在 sessionStorage
-    data-css-url      样式表地址。默认按本 JS 的 src 自动找同目录同名 .css；
-                      打包过的 SPA 里猜不到时（script.src 是带哈希的 bundle 名）
-                      必须显式给，否则挂件会以无样式状态渲染（控制台会有 warn）
+    data-css-url      样式表地址（打包过的 SPA 必须给）
 
-  需要更细的控制（extraInfo / onBeforeSend / 自定义 transport）就用 JS 挂载，见
-  references/self-hosted-widget.md。
+  知识库（RAG）、记忆的写入、自定义检索钩子这些没法用 data-* 表达，
+  要用 JS 挂载，见 references/self-hosted-widget.md。
 -->
 
 <!--

@@ -15,12 +15,16 @@
 界面只依赖这一个函数签名（`assets/widget/ai-assistant.js` 里 `transports` 对象）：
 
 ```js
-async function transport({ messages, config, signal, onDelta }) {
-  // messages: [{ role: 'user' | 'assistant', content: string }]
-  // config:   挂件的全部配置（endpoint / model / apiKey / headers / …）
-  // signal:   AbortSignal，用户点"停止"时会 abort，你要把它透传给 fetch
-  // onDelta(deltaText, fullText): 每收到一段就调一次，界面据此流式渲染
-  // 返回：最终全文（string）
+async function transport({ messages, config, signal, onDelta, onReferences, memory, knowledge }) {
+  // messages:       [{ role: 'user' | 'assistant', content: string }]
+  // config:         挂件的全部配置（endpoint / model / apiKey / headers / …）
+  // signal:         AbortSignal，用户点"停止"时会 abort，你要把它透传给 fetch
+  // memory:         已记住的用户信息（默认已经拼成 system 消息放进 messages，这里给的是原始对象）
+  // knowledge:      知识库配置，见下面「知识库与引用」
+  // onDelta(deltaText, fullText):  每收到一段就调一次，界面据此流式渲染
+  // onReferences(list):            知识库命中的资料，界面渲染成可展开的「参考资料」
+  //                                每项 { title, url?, snippet? }
+  // 返回：最终全文（string），或 { text, references }
 }
 ```
 
@@ -38,6 +42,10 @@ WebAIAssistant.mount({ transport: 'my-gateway', endpoint: '/api/chat' });
 | `openai` | OpenAI 兼容协议（`POST{model,messages,stream}` + SSE）。百炼 compatible-mode、vLLM、Ollama、one-api 这类网关都能用 |
 | `dashscopeApp` | 百炼**智能体应用**直连（`/api/v1/apps/{appId}/completion`）。已经建了智能体应用、不想再套一层网关时用 |
 | `echo` | 不发网络请求的本地假回复。开发预览、写自动化验收时用，**上线前换成真实的** |
+
+内置的两个协议实现都会**自动识别**常见的引用字段（`references` / `citations` / `sources` / `search_info` / `doc_references`，
+以及每项里的 `title|name|doc_name`、`url|link|doc_url`、`snippet|content|text`），
+所以大多数自建 RAG 后端不用改代码就能把引用显示出来。
 
 ## 后端代理（唯一能安全放 key 的地方）
 
@@ -192,23 +200,118 @@ bundle 名，猜不到样式表，挂件就会以**无样式状态**渲染。这
 
 完整列表见 `assets/widget/ai-assistant.js` 顶部的 `DEFAULTS`。常用的：
 
-| 键 | 说明 |
-|---|---|
-| `name` | 标题栏里的名字 |
-| `greeting` | 空态问候语。**按业务亲手写**，别用套话 |
-| `suggestions` | 空态的问题示例，2–4 条，比任何说明文字都有用 |
-| `transport` / `endpoint` / `model` / `apiKey` / `appId` | 后端对接 |
-| `headers` / `body` | 附加到请求上的头与字段（例如自研网关要的租户头） |
-| `theme` | `auto`（跟随系统）/ `light` / `dark` |
-| `position` | `right` / `left` |
-| `draggable` / `autoOpen` | 启动器可拖 / 加载后自动展开 |
-| `accent` / `radius` | 直接覆盖主色与圆角 |
-| `css` / `cssUrl` | 完全替换内置样式表 |
-| `persist` / `sessionKey` | 会话是否保留在 sessionStorage |
-| `zIndex` | 默认 `2147483000` |
-| `extraInfo` | 对象或函数，随**每一次**请求发送的业务上下文 |
-| `onBeforeSend` | 返回 `false` 可拦截发送（内容审核、敏感词） |
-| `onAfterSend` / `onError` | 埋点、留痕、上报 |
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `name` | `'助手'` | 标题栏里的名字 |
+| `greeting` | — | 空态问候语。**按业务亲手写**，别用套话 |
+| `suggestions` | `[]` | 空态的问题示例，2–4 条，比任何说明文字都有用 |
+| `hotWords` | — | 热词，`['a','b']` 或 `[{text, weight}]` |
+| `hotWordsUrl` | — | 从后端拉热词；返回数组或 `{items:[]}`。拉不到就用静态的兜底 |
+| `hotWordsRefresh` | `0` | 毫秒；>0 时定时重拉（热榜会变，这个才有意义） |
+| `hotWordsPlacement` | `'both'` | `'empty'`（只在空态）/ `'composer'`（只做输入框上方的常驻条）/ `'both'` / `'off'` |
+| `transport` / `endpoint` / `model` / `apiKey` / `appId` | — | 后端对接 |
+| `headers` / `body` | — | 附加到请求上的头与字段（例如自研网关要的租户头） |
+| `retrieve` | — | `async (query, {messages}) => [{title,url,snippet}]`。前端检索钩子，适合知识库就在同源后端的场景 |
+| `knowledge` | — | 知识库配置（`{id, name, topK, mode}`），会随请求下发给后端 |
+| `memory` | `true` | 是否启用记忆（持久化 + 随请求发送） |
+| `memoryForward` | `'system'` | `'system'`：把记忆拼成一条 system 消息（兼容性最好）；`'body'`：作为 `memory` 字段放进请求体，给自研后端用 |
+| `memorySystem` | `true` | 是否用 system 消息承载记忆 |
+| `memoryPrompt` | 见源码 | 记忆那段 system 消息的开头语 |
+| `history` | `true` | 是否启用多会话历史 |
+| `maxThreads` | `40` | 最多保留多少个会话，超出丢最旧的 |
+| `storage` | `'session'` | `'session'`（关标签页就清）/ `'local'`（跨访问保留）/ `'none'` |
+| `storageKey` | `'waa'` | 存储键。同域多个挂件要区分开 |
+| `closeOnOutsideClick` | `true` | 点面板以外的任何地方收起 |
+| `outsideIgnore` | — | 选择器或数组。站点自己的弹层被误判成"外部点击"时，把它的选择器放进来豁免 |
+| `closeOnEsc` | `true` | Esc 收起（抽屉打开时 Esc 先关抽屉） |
+| `theme` | `'auto'` | `auto` / `light` / `dark` |
+| `position` | `'right'` | `right` / `left` |
+| `draggable` / `autoOpen` | `true` / `false` | 启动器可拖 / 加载后自动展开 |
+| `accent` / `radius` | — | 直接覆盖主色与圆角 |
+| `css` / `cssUrl` | — | 完全替换内置样式表 |
+| `zIndex` | `2147483000` | 被导航栏盖住时调这个 |
+| `extraInfo` | — | 对象或函数，随**每一次**请求发送的业务上下文 |
+| `onBeforeSend` | — | 返回 `false` 可拦截发送（内容审核、敏感词） |
+| `onAfterSend` | — | `({messages, reply, references, threadId})`，用来埋点、留痕、顺手写记忆 |
+| `onError` / `onThreadChange` | — | 上报错误 / 会话列表变化时回调 |
+| `echoReply` | — | `transport: 'echo'` 时用的假回复文案 |
+
+## 会话历史、新对话与记忆
+
+三者是一套东西，共用一份存储（`storageKey` 下），互相关联但语义不同：
+
+| | 是什么 | 生命周期 |
+|---|---|---|
+| **新对话** | 开一条空白会话。标题栏的 `+`，或 `widget.newThread()` | 旧会话进历史列表 |
+| **历史记录** | 多条会话，可切换、删除、清空。标题栏的列表图标打开抽屉 | 受 `storage` 与 `maxThreads` 控制 |
+| **记忆** | 关于**这个人**的零散事实（门店、机型、偏好…），和会话无关 | 一直留着，直到被覆盖或清空 |
+
+界面上：标题栏 `+` = 新对话，列表图标 = 历史与记忆抽屉（下半区就是记忆，逐条列出来，可一键清空）。
+
+代码里：
+
+```js
+w.newThread();                  // 新对话（当前会话已经是空的就不重复开）
+w.listThreads();                // [{id, title, updatedAt, count, active}]
+w.openThread(id);
+w.deleteThread(id);
+w.clearAll();                   // 历史和记忆一起清掉（会先 confirm）
+
+w.remember({ 门店: '杭州西湖店' });   // 合并写入
+w.forget('门店');                    // 或 forget() 清空
+w.getMemory();
+```
+
+**记忆默认怎么用**：`memory` 非空时，每次请求会在 `messages` 最前面插一条 system 消息
+（内容 = `memoryPrompt` + 逐条列出的事实）。这样对任何 OpenAI 兼容后端都生效，不需要后端配合。
+想让后端拿到**原始对象**自己做处理（比如写进数据库），把 `memoryForward` 设成 `'body'`，
+它就会作为 `memory` 字段出现在请求体里。
+
+**该记什么**：记稳定的事实（他是谁、买过什么、偏好什么），别记临时状态（"他刚问了运费"）。
+记忆是一段会一直发给模型的文本，塞得越碎，噪音越大。摘要式的一条比十条碎片有用。
+
+## 知识库与引用（RAG）
+
+挂件不实现检索，它负责**把检索这件事接进来，并把命中的资料显示出来**。三种接法：
+
+**1）后端已经在做检索（最常见）**
+你的接口返回里带上引用，字段名随便——内置的 `openai` / `dashscopeApp` 认识
+`references` / `citations` / `sources` / `search_info` / `doc_references` 这几种。例如：
+
+```json
+{
+  "choices": [{ "message": { "content": "整机保修 3 年…" } }],
+  "references": [
+    { "title": "A1 保修条款.pdf", "url": "https://…/warranty", "snippet": "整机保修 3 年，机芯 5 年。" }
+  ]
+}
+```
+
+**2）流式场景：边流边给引用**
+SSE 的任意一帧里带 `references` 就会被抓走，界面在回复下方渲染成可展开的「参考资料」。
+
+**3）知识库就在同源后端**
+用 `retrieve` 钩子，省一次协议往返：
+
+```js
+retrieve: async (query) => {
+  const r = await fetch('/api/kb/search?q=' + encodeURIComponent(query));
+  return r.json();     // [{title, url, snippet}]
+}
+```
+
+`retrieve` 抛错不会拦住对话——检索失败就当作没有引用，助手照常回答。
+
+百炼/AppFlow 一侧的检索怎么配（数据连接 → 知识库 → 应用挂载 → 必定调用），
+见 `console-setup.md` 第 4 步。走路径 A（官方挂件）时引用由 AppFlow 自己的界面负责，
+不需要挂件参与。
+
+**配置下发**：`knowledge` 会原样放进请求体（`openai` 协议）或作为参数传给智能体应用，
+后端可以据此决定用哪个库、召回几条：
+
+```js
+knowledge: { id: 'kb_yejing', name: '野径咖啡知识库', topK: 4, mode: 'always' }
+```
 
 ## 关于 `extraInfo` 与 `onBeforeSend`
 

@@ -23,6 +23,23 @@
 
 这个 skill 把这些都写进了流程和校验器里。
 
+## 挂件自带什么
+
+自建路径的挂件是**能直接交付**的，不是"一个聊天气泡的骨架"：
+
+| 能力 | 说明 |
+|---|---|
+| **点外部收起** | 点面板以外的任何地方收起；面板内部、启动器、历史抽屉内部不会误关。Esc 同样有效，抽屉打开时 Esc 先关抽屉。站点自己的弹层可以放进 `outsideIgnore` 豁免 |
+| **多会话历史** | 「新对话」+ 历史抽屉：切换、删除、清空。可选 `session`（关标签页清）/ `local`（跨访问保留） |
+| **记忆** | 关于访客的稳定事实（门店、机型、偏好…）持久保存，每次请求自动作为 system 消息带上；抽屉里可见、可一键清空 |
+| **热词** | 静态兜底 + 从后端拉取（`hotWordsUrl`），带热度数字，可设为常驻在输入框上方 |
+| **知识库引用** | 自动识别 `references` / `citations` / `sources` / `search_info` / `doc_references` 等常见字段，渲染成可展开的「参考资料」；也支持 `retrieve` 前端检索钩子 |
+| **样式隔离** | Shadow DOM，双向隔离。站点写 `* { box-sizing: content-box }`、`div { border: 2px dashed }` 也进不来 |
+| **流式 + 降级** | SSE 逐字流式、可中断；后端挂了给人话错误 + 重试，不是白屏死转 |
+| **可访问性** | Esc 关窗、焦点管理、`aria-live` 播报、`prefers-reduced-motion` |
+
+配色走 CSS 自定义属性，改四个变量就能融进任何站点。检索本身不实现——挂件负责**下发知识库配置**和**显示命中的资料**，检索在你自己的后端做。
+
 ## 两条路
 
 **路径 A · 官方 AppFlow 悬浮挂件**
@@ -84,10 +101,11 @@ bun scripts/verify-embed.mjs ./你的站点 --json    # 机器可读，有 error
 ```
 SKILL.md                          Agent 的执行流程与约束
 index.html                        在线演示（这个页面本身就是一份用法示例）
+hot-words.json                    演示用的热词数据（模拟后端返回）
 references/
   appflow-sdk.md                  AppFlow Chat SDK 完整 API
   console-setup.md                阿里云控制台四步 + 知识库（RAG）
-  self-hosted-widget.md           自建挂件架构、传输契约、后端代理实现
+  self-hosted-widget.md           自建挂件架构、传输契约、后端代理实现、记忆/历史/热词/RAG
   troubleshooting.md              按症状排查
   design.md                       挂件的视觉决策与反"AI 味"清单
 assets/

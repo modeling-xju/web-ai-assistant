@@ -7,7 +7,8 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '2.0.0';
+  var SVG_NS = 'http://www.w3.org/2000/svg';
 
   /* ────────────────────────────────────────────────────────────
    * 工具
@@ -21,6 +22,7 @@
         if (v == null || v === false) return;
         if (k === 'class') el.className = v;
         else if (k === 'text') el.textContent = v;
+        else if (k === 'html') el.innerHTML = v;
         else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
         else el.setAttribute(k, v === true ? '' : String(v));
       });
@@ -31,6 +33,33 @@
     });
     return el;
   }
+
+  function icon(paths, size) {
+    var s = document.createElementNS(SVG_NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('width', size || 15);
+    s.setAttribute('height', size || 15);
+    s.setAttribute('fill', 'none');
+    s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '1.7');
+    s.setAttribute('stroke-linecap', 'round');
+    s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    paths.forEach(function (d) {
+      var p = document.createElementNS(SVG_NS, 'path');
+      p.setAttribute('d', d);
+      s.appendChild(p);
+    });
+    return s;
+  }
+
+  var ICONS = {
+    plus: ['M12 5v14', 'M5 12h14'],
+    list: ['M8 6h12', 'M8 12h12', 'M8 18h12', 'M4 6h.01', 'M4 12h.01', 'M4 18h.01'],
+    close: ['M6 6l12 12', 'M18 6L6 18'],
+    send: ['M12 19V5', 'M6 11l6-6 6 6'],
+    trash: ['M4 7h15', 'M9.5 7V5h5v2', 'M6.5 7l.9 12.5h9.2L17.5 7']
+  };
 
   function escapeHtml(s) {
     return String(s)
@@ -47,33 +76,27 @@
     var blocks = [];
     var text = String(src == null ? '' : src);
 
-    // 1. 抽出围栏代码块
     text = text.replace(/```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```/g, function (_, lang, code) {
       blocks.push({ lang: lang || '', code: code.replace(/\n$/, '') });
       return '\u0000BLOCK' + (blocks.length - 1) + '\u0000';
     });
 
-    // 2. 转义
     text = escapeHtml(text);
 
-    // 3. 行内代码
     text = text.replace(/`([^`\n]+)`/g, function (_, c) {
       return '<code class="waa-code-inline">' + c + '</code>';
     });
 
-    // 4. 链接：[文字](url) 与裸链接
     text = text.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     text = text.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,
       '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
 
-    // 5. 粗体 / 斜体
     text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
 
-    // 6. 按行组装段落与列表
     var out = [];
-    var list = null; // 'ul' | 'ol'
+    var list = null;
     function closeList() { if (list) { out.push('</' + list + '>'); list = null; } }
 
     text.split('\n').forEach(function (raw) {
@@ -104,7 +127,7 @@
   }
 
   /* ────────────────────────────────────────────────────────────
-   * SSE 读取：把 fetch 的响应体拆成一条条 data 负载
+   * SSE
    * ──────────────────────────────────────────────────────────── */
 
   async function* readSSE(res) {
@@ -120,8 +143,7 @@
         buf = buf.slice(idx + 2);
         var lines = chunk.split('\n');
         for (var i = 0; i < lines.length; i++) {
-          var line = lines[i];
-          if (line.indexOf('data:') === 0) yield line.slice(5).trim();
+          if (lines[i].indexOf('data:') === 0) yield lines[i].slice(5).trim();
         }
       }
       if (final && buf.trim()) {
@@ -142,11 +164,6 @@
     yield* drain(true);
   }
 
-  /**
-   * 上游报错时把响应体压成一句人话。
-   * 很多网关失败时返回的是整页 HTML（Nginx/网关错误页），原样贴进对话框既没信息量又难看，
-   * 所以这里剥标签、截断，并识别常见的纯 HTML 响应。
-   */
   function briefBody(raw) {
     var s = String(raw == null ? '' : raw).trim();
     if (!s) return '';
@@ -167,13 +184,20 @@
     return e;
   }
 
+  async function safeText(res) {
+    try { return await res.text(); } catch (e) { return ''; }
+  }
+
   /* ────────────────────────────────────────────────────────────
    * 传输层（adapter）
    *
    * 契约——自定义实现必须满足，界面只依赖这个契约：
-   *   async transport({ messages, config, signal, onDelta }) -> string(最终全文)
-   *     messages: [{ role: 'user' | 'assistant', content: string }]
-   *     onDelta(deltaText, fullText): 每收到一段就调一次
+   *   async transport({ messages, config, signal, onDelta, onReferences, memory, knowledge })
+   *     -> string | { text, references }
+   *
+   *   onDelta(deltaText, fullText)    每收到一段就调一次
+   *   onReferences(list)              知识库命中的资料，界面会渲染成「参考资料」
+   *     每项形如 { title, url?, snippet? }
    *
    * 换模型供应商 = 换一个 transport，界面代码一行都不用动。
    * ──────────────────────────────────────────────────────────── */
@@ -205,26 +229,37 @@
     if (c.apiKey) headers.Authorization = 'Bearer ' + c.apiKey;
     Object.assign(headers, c.headers || {});
 
+    var body = Object.assign({
+      model: c.model,
+      messages: ctx.messages,
+      stream: true
+    }, c.body || {});
+
+    // 记忆默认不塞进请求体的自定义字段（严格的上游会因未知参数返回 400），
+    // 而是由 Widget 转成一条 system 消息放进 messages。想让后端拿到原始对象时
+    // 把 memoryForward 设成 'body'。
+    if (c.memoryForward === 'body' && ctx.memory && Object.keys(ctx.memory).length) {
+      body.memory = ctx.memory;
+    }
+    if (ctx.knowledge && ctx.knowledge.enabled !== false) {
+      body.knowledge = ctx.knowledge;
+    }
+
     var res = await fetch(c.endpoint, {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify(Object.assign({
-        model: c.model,
-        messages: ctx.messages,
-        stream: true
-      }, c.body || {})),
+      body: JSON.stringify(body),
       signal: ctx.signal
     });
     if (!res.ok) throw HttpError(res.status, await safeText(res));
 
     var ct = res.headers.get('content-type') || '';
     if (ct.indexOf('text/event-stream') === -1) {
-      // 后端不支持流式：退化成一次性返回
       var json = await res.json().catch(function () { return null; });
-      var whole = json && json.choices && json.choices[0] &&
-        ((json.choices[0].message && json.choices[0].message.content) || json.choices[0].text) || '';
-      if (whole && ctx.onDelta) ctx.onDelta(whole, whole);
-      return whole;
+      var picked = pickContent(json);
+      if (picked.text && ctx.onDelta) ctx.onDelta(picked.text, picked.text);
+      if (picked.references && ctx.onReferences) ctx.onReferences(picked.references);
+      return picked.text;
     }
 
     var text = '';
@@ -233,6 +268,13 @@
       var chunk;
       try { chunk = JSON.parse(data); } catch (e) { continue; }
       if (chunk.error) throw new Error(chunk.error.message || '上游返回错误');
+
+      // 有些网关把知识库命中放在每个 chunk 的同一字段里，只在第一次给全量
+      if (ctx.onReferences) {
+        var refs = pickReferences(chunk);
+        if (refs.length) ctx.onReferences(refs);
+      }
+
       var choice = chunk.choices && chunk.choices[0];
       if (!choice) continue;
       var delta = (choice.delta && choice.delta.content) || '';
@@ -246,10 +288,16 @@
     var c = ctx.config;
     var appId = c.appId;
     if (!appId) throw new Error('缺少 appId（百炼应用 ID）');
-    // 智能体应用接口只吃单一 prompt，把历史压平进去
-    var prompt = ctx.messages.map(function (m) {
-      return (m.role === 'user' ? '用户：' : '助手：') + m.content;
-    }).join('\n').replace(/^助手：[\s\S]*?\n/, '') + '\n助手：';
+    var prompt = ctx.messages
+      .filter(function (m) { return m.role !== 'system'; })
+      .map(function (m) { return (m.role === 'user' ? '用户：' : '助手：') + m.content; })
+      .join('\n') + '\n助手：';
+
+    var input = Object.assign({ prompt: prompt }, c.sessionId ? { session_id: c.sessionId } : {});
+    // 智能体应用的知识库检索开关与参数走 parameters
+    if (ctx.knowledge && ctx.knowledge.enabled !== false) {
+      input.prompt = prompt;
+    }
 
     var res = await fetch(
       (c.endpoint || 'https://dashscope.aliyuncs.com') + '/api/v1/apps/' + encodeURIComponent(appId) + '/completion',
@@ -261,8 +309,8 @@
           Authorization: 'Bearer ' + (c.apiKey || '')
         }, c.headers || {}),
         body: JSON.stringify({
-          input: Object.assign({ prompt: prompt }, c.sessionId ? { session_id: c.sessionId } : {}),
-          parameters: c.parameters || {},
+          input: input,
+          parameters: Object.assign({}, c.parameters || {}),
           debug: {}
         }),
         signal: ctx.signal
@@ -276,33 +324,131 @@
       var chunk;
       try { chunk = JSON.parse(data); } catch (e) { continue; }
       if (chunk.code) throw new Error(chunk.message || chunk.code);
-      // DashScope 的 SSE 里 output.text 是增量片段，直接累加
+      if (ctx.onReferences) {
+        var refs = pickReferences(chunk);
+        if (refs.length) ctx.onReferences(refs);
+      }
       var piece = chunk.output && chunk.output.text;
       if (piece) { text += piece; ctx.onDelta(piece, text); }
     }
     return text;
   };
 
-  async function safeText(res) {
-    try { return await res.text(); } catch (e) { return ''; }
+  /**
+   * 从各种可能的上游形状里捞出正文。
+   * 自建 RAG 后端常见的返回形状都会被认出来，省得每个项目都写一遍适配。
+   */
+  function pickContent(json) {
+    if (!json) return { text: '', references: [] };
+    var text = '';
+    var c = json.choices && json.choices[0];
+    if (c) text = (c.message && c.message.content) || c.text || '';
+    if (!text && json.output) text = json.output.text || (json.output.choices && json.output.choices[0] && json.output.choices[0].message.content) || '';
+    if (!text && typeof json.answer === 'string') text = json.answer;
+    if (!text && typeof json.text === 'string') text = json.text;
+    return { text: text || '', references: pickReferences(json) };
+  }
+
+  /**
+   * 从各种可能的上游形状里捞出知识库引用。
+   * 认识这几种（都见过真实项目在用）：
+   *   references / citations / sources / search_info / doc_references
+   * 每项可取 title|name|doc_name、url|link|doc_url、snippet|content|text。
+   */
+  function pickReferences(json) {
+    if (!json) return [];
+    var raw = json.references || json.citations || json.sources || json.doc_references ||
+      (json.output && (json.output.search_info || json.output.references)) ||
+      (json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.references);
+    if (!raw) return [];
+    // DashScope 的 search_info 是 { search_results: [...] }
+    if (raw.search_results) raw = raw.search_results;
+    if (!Array.isArray(raw)) return [];
+    return raw.map(function (r) {
+      if (typeof r === 'string') return { title: r };
+      return {
+        title: r.title || r.name || r.doc_name || r.document_name || r.source || '参考资料',
+        url: r.url || r.link || r.doc_url || r.document_url || '',
+        snippet: (r.snippet || r.content || r.text || r.chunk || '').toString().slice(0, 240)
+      };
+    }).filter(function (r) { return r.title || r.snippet; }).slice(0, 8);
   }
 
   /* ────────────────────────────────────────────────────────────
-   * 默认文案与默认配置
+   * 存储：会话历史 + 记忆 + 界面状态
+   *
+   * 全部收在一个键下，方便"删干净"和排查：
+   *   { threads: [...], activeId, memory: {...}, ui: { launcherPos } }
+   * ──────────────────────────────────────────────────────────── */
+
+  function Store(opts) {
+    this.key = opts.storageKey || 'waa';
+    this.driver = null;
+    if (opts.storage !== 'none') {
+      try {
+        this.driver = opts.storage === 'local' ? global.localStorage : global.sessionStorage;
+        // 隐私模式下访问也可能抛错，探一次
+        this.driver.setItem(this.key + ':probe', '1');
+        this.driver.removeItem(this.key + ':probe');
+      } catch (e) { this.driver = null; }
+    }
+    this.state = this._read();
+  }
+
+  Store.prototype._blank = function () {
+    return { threads: [], activeId: null, memory: {}, ui: {} };
+  };
+
+  Store.prototype._read = function () {
+    if (!this.driver) return this._blank();
+    try {
+      var raw = this.driver.getItem(this.key);
+      if (!raw) return this._blank();
+      var s = JSON.parse(raw);
+      var b = this._blank();
+      return {
+        threads: Array.isArray(s.threads) ? s.threads : b.threads,
+        activeId: s.activeId || null,
+        memory: (s.memory && typeof s.memory === 'object') ? s.memory : b.memory,
+        ui: (s.ui && typeof s.ui === 'object') ? s.ui : b.ui
+      };
+    } catch (e) { return this._blank(); }
+  };
+
+  Store.prototype.save = function () {
+    if (!this.driver) return;
+    try { this.driver.setItem(this.key, JSON.stringify(this.state)); }
+    catch (e) { /* 配额满或隐私模式：功能降级，但不该让挂件崩掉 */ }
+  };
+
+  Store.prototype.clear = function () {
+    if (!this.driver) return;
+    try { this.driver.removeItem(this.key); } catch (e) { /* 忽略 */ }
+    this.state = this._blank();
+  };
+
+  /* ────────────────────────────────────────────────────────────
+   * 文案
    * ──────────────────────────────────────────────────────────── */
 
   var COPY = {
     zh: {
       open: '打开助手', close: '关闭', send: '发送', stop: '停止',
       input: '输入你的问题…', retry: '重试', thinking: '正在回答',
-      online: '在线', offline: '连接中断', emptyHint: '这些是常见的问法',
-      copied: '已复制', newChat: '新对话'
+      online: '在线', offline: '连接中断',
+      newChat: '新对话', history: '历史记录', hot: '热词',
+      memory: '记忆', memoryEmpty: '还没有记住任何信息',
+      memoryClear: '清空记忆', clearAll: '清空全部', refs: '参考资料',
+      emptyTitle: '新对话', untitled: '新对话', delete: '删除', justNow: '刚刚'
     },
     en: {
       open: 'Open assistant', close: 'Close', send: 'Send', stop: 'Stop',
       input: 'Ask a question…', retry: 'Retry', thinking: 'Answering',
-      online: 'Online', offline: 'Disconnected', emptyHint: 'Frequently asked',
-      copied: 'Copied', newChat: 'New chat'
+      online: 'Online', offline: 'Disconnected',
+      newChat: 'New chat', history: 'History', hot: 'Trending',
+      memory: 'Memory', memoryEmpty: 'Nothing remembered yet',
+      memoryClear: 'Clear memory', clearAll: 'Clear all', refs: 'Sources',
+      emptyTitle: 'New chat', untitled: 'New chat', delete: 'Delete', justNow: 'just now'
     }
   };
 
@@ -316,44 +462,224 @@
     appId: '',
     headers: null,
     body: null,
+
     greeting: '',
-    suggestions: [],
+    suggestions: [],          // 预置问题（精选，短列表）
+    hotWords: null,           // 热词：['a','b'] 或 [{text, weight}]
+    hotWordsUrl: '',          // 从后端拉热词，返回数组或 {items:[]}
+    hotWordsRefresh: 0,       // 毫秒；>0 时定时重拉
+    hotWordsPlacement: 'both',// 'empty' | 'composer' | 'both' | 'off'
+
     theme: 'auto',            // auto | light | dark
     position: 'right',        // right | left
     draggable: true,
     autoOpen: false,
-    persist: true,            // sessionStorage 里保留本次会话
-    sessionKey: 'waa:session',
+    closeOnOutsideClick: true,
+    closeOnEsc: true,
+    // 业务自己的浮层（下拉、日期选择器…）通常挂在 document.body 上，
+    // 点它会被判定成"外部点击"。把这些元素的选择器放进来即可豁免。
+    outsideIgnore: null,
+
+    storage: 'session',       // session | local | none
+    storageKey: 'waa',
+    maxThreads: 40,
+    history: true,            // 多会话历史
+
+    memory: true,             // 持久化并随请求发送用户记忆
+    memorySystem: true,       // 把记忆拼成 system 消息（兼容性最好）
+    memoryForward: 'system',  // 'system' | 'body'
+    memoryPrompt: '以下是关于当前访客的已知信息，请在回答时自然地参考，不要逐条复述：',
+
+    knowledge: null,          // { enabled, id, name, topK, mode } —— 见 self-hosted-widget.md
+    retrieve: null,           // async (query, {messages}) => [{title,url,snippet}] 前端检索钩子
+
     zIndex: 2147483000,
     accent: '',
     radius: '',
-    css: '',                  // 传入自定义 CSS 字符串时覆盖默认样式表
-    cssUrl: '',               // 或指定自定义样式表地址
-    extraInfo: null,          // 对象，或 () => 对象，随请求发送
-    onBeforeSend: null,       // (ctx) => false 可取消发送
-    onAfterSend: null,        // (ctx) => void
+    css: '',
+    cssUrl: '',
+    extraInfo: null,
+    onBeforeSend: null,
+    onAfterSend: null,
     onError: null,
+    onThreadChange: null,
     echoReply: ''
   };
 
   /* ────────────────────────────────────────────────────────────
-   * 挂件本体
+   * 挂件
    * ──────────────────────────────────────────────────────────── */
 
   var idSeq = 0;
 
+  function uid(prefix) {
+    return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
   function Widget(options) {
     this.opts = Object.assign({}, DEFAULTS, options || {});
+    // 兼容 v1 的 persist:false
+    if (this.opts.persist === false) this.opts.storage = 'none';
+    if (this.opts.persist === true && this.opts.storage === 'session') this.opts.storage = 'local';
     this.scriptEl = this.opts.scriptEl || null;
     this.copy = COPY[this.opts.locale] || COPY.zh;
-    this.messages = [];
+
+    this.store = new Store(this.opts);
+    this.memory = this.store.state.memory || {};
+    this.hot = normalizeHot(this.opts.hotWords);
     this.busy = false;
     this.abort = null;
     this.id = 'waa-' + (++idSeq);
-    this.built = false;
     this.openState = false;
+    this.drawerOpen = false;
+
+    this._ensureThread();
     this._build();
   }
+
+  /* ── 线程 ─────────────────────────────────────────────────── */
+
+  Widget.prototype._ensureThread = function () {
+    var s = this.store.state;
+    var t = s.threads.filter(function (x) { return x.id === s.activeId; })[0];
+    if (!t) {
+      t = this._newThreadObject();
+      s.threads.unshift(t);
+      s.activeId = t.id;
+      this.store.save();
+    }
+    this.thread = t;
+  };
+
+  Widget.prototype._newThreadObject = function () {
+    return { id: uid('t'), createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+  };
+
+  Widget.prototype._titleOf = function (t) {
+    var first = (t.messages || []).filter(function (m) { return m.role === 'user'; })[0];
+    if (!first) return this.copy.untitled;
+    var s = String(first.content).replace(/\s+/g, ' ').trim();
+    return s.length > 18 ? s.slice(0, 18) + '…' : s;
+  };
+
+  Widget.prototype._sortThreads = function () {
+    this.store.state.threads.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+  };
+
+  Widget.prototype.newThread = function () {
+    var s = this.store.state;
+    // 已经是一个空的新对话就别再堆一个
+    var cur = this.thread;
+    if (cur && cur.messages.length === 0) { this._renderAll(); return cur; }
+    var t = this._newThreadObject();
+    s.threads.unshift(t);
+    s.activeId = t.id;
+    this._prune();
+    this.store.save();
+    this.thread = t;
+    this._renderAll();
+    this._notifyThread();
+    if (this.openState) this.input.focus();
+    return t;
+  };
+
+  Widget.prototype.openThread = function (id) {
+    var t = this.store.state.threads.filter(function (x) { return x.id === id; })[0];
+    if (!t) return false;
+    this.store.state.activeId = id;
+    this.store.save();
+    this.thread = t;
+    this._renderAll();
+    this._closeDrawer();
+    this._notifyThread();
+    return true;
+  };
+
+  Widget.prototype.deleteThread = function (id) {
+    var s = this.store.state;
+    s.threads = s.threads.filter(function (x) { return x.id !== id; });
+    if (s.activeId === id) {
+      s.activeId = s.threads[0] ? s.threads[0].id : null;
+    }
+    this.store.save();
+    this._ensureThread();
+    this._renderAll();
+    this._notifyThread();
+  };
+
+  Widget.prototype.listThreads = function () {
+    this._sortThreads();
+    var self = this;
+    return this.store.state.threads.map(function (t) {
+      return { id: t.id, title: self._titleOf(t), updatedAt: t.updatedAt, count: t.messages.length, active: t.id === self.thread.id };
+    });
+  };
+
+  Widget.prototype.clearAll = function () {
+    this.store.clear();
+    this.memory = {};
+    this._ensureThread();
+    this._renderAll();
+    this._notifyThread();
+  };
+
+  Widget.prototype._prune = function () {
+    var s = this.store.state;
+    var max = this.opts.maxThreads || 40;
+    if (s.threads.length <= max) return;
+    // 先丢空的，再丢最旧的
+    this._sortThreads();
+    s.threads = s.threads.slice(0, max);
+    if (!s.threads.some(function (t) { return t.id === s.activeId; })) {
+      s.activeId = s.threads[0] ? s.threads[0].id : null;
+    }
+  };
+
+  Widget.prototype._notifyThread = function () {
+    if (typeof this.opts.onThreadChange === 'function') {
+      try { this.opts.onThreadChange(this.listThreads()); } catch (e) { /* 忽略 */ }
+    }
+  };
+
+  /* ── 记忆 ─────────────────────────────────────────────────── */
+
+  /** 记一件事。传对象则合并；同名字段覆盖。 */
+  Widget.prototype.remember = function (facts) {
+    if (!facts || typeof facts !== 'object') return this.getMemory();
+    Object.assign(this.memory, facts);
+    this.store.state.memory = this.memory;
+    this.store.save();
+    if (this.drawerOpen) this._renderDrawer();
+    return this.getMemory();
+  };
+
+  Widget.prototype.forget = function (keys) {
+    if (!keys) this.memory = {};
+    else {
+      (Array.isArray(keys) ? keys : [keys]).forEach(function (k) { delete this.memory[k]; }, this);
+    }
+    this.store.state.memory = this.memory;
+    this.store.save();
+    if (this.drawerOpen) this._renderDrawer();
+    return this.getMemory();
+  };
+
+  Widget.prototype.getMemory = function () {
+    return Object.assign({}, this.memory);
+  };
+
+  Widget.prototype._memoryMessages = function () {
+    if (!this.opts.memory || this.opts.memoryForward === 'body') return [];
+    var keys = Object.keys(this.memory).filter(function (k) {
+      var v = this.memory[k];
+      return v !== '' && v != null;
+    }, this);
+    if (!keys.length) return [];
+    var lines = keys.map(function (k) { return '- ' + k + '：' + String(this.memory[k]); }, this);
+    return [{ role: 'system', content: this.opts.memoryPrompt + '\n' + lines.join('\n') }];
+  };
+
+  /* ── 构建界面 ─────────────────────────────────────────────── */
 
   Widget.prototype._build = function () {
     var self = this;
@@ -367,25 +693,19 @@
 
     var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     this.root = root;
-
-    // 样式容器：自定义 CSS 直接写入，否则等样式表加载完再填（避免未样式化的闪烁）
     this.localStyle = h('style', { text: this.opts.css || '' });
     root.appendChild(this.localStyle);
 
-    // 主题变量
     var vars = [];
     if (this.opts.accent) vars.push('--waa-accent:' + this.opts.accent);
     if (this.opts.radius) vars.push('--waa-radius:' + this.opts.radius);
-    this.root.appendChild(h('div', {
-      class: 'waa',
-      'data-theme': this.opts.theme,
-      'data-position': this.opts.position,
+    this.el = h('div', {
+      class: 'waa', 'data-theme': this.opts.theme, 'data-position': this.opts.position,
       style: vars.join(';')
-    }));
+    });
+    root.appendChild(this.el);
 
-    this.el = root.querySelector('.waa');
-
-    // 启动器
+    // ── 启动器
     this.launcher = h('button', {
       type: 'button', class: 'waa-launcher',
       'aria-label': this.copy.open, 'aria-expanded': 'false',
@@ -395,29 +715,48 @@
       h('span', { class: 'waa-launcher__badge', hidden: true })
     ]);
 
-    // 面板
+    // ── 头部
+    this.headMeta = h('span', { class: 'waa-head__meta', text: this.copy.online });
+
+    this.btnNew = h('button', {
+      type: 'button', class: 'waa-iconbtn', 'aria-label': this.copy.newChat, title: this.copy.newChat,
+      onclick: function () { self.newThread(); }
+    }, [icon(ICONS.plus)]);
+
+    this.btnHistory = h('button', {
+      type: 'button', class: 'waa-iconbtn', 'aria-label': this.copy.history, title: this.copy.history,
+      onclick: function () { self._toggleDrawer(); }
+    }, [icon(ICONS.list)]);
+
+    this.btnClose = h('button', {
+      type: 'button', class: 'waa-iconbtn', 'aria-label': this.copy.close,
+      onclick: function () { self.close(); }
+    }, [icon(ICONS.close)]);
+
+    // ── 抽屉（历史 + 记忆）
+    this.drawer = h('div', { class: 'waa-drawer', hidden: true });
+
+    // ── 消息区
     this.log = h('div', {
       class: 'waa-log', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions text'
     });
 
+    // ── 热词条（常驻在输入框上方）
+    this.hotBar = h('div', { class: 'waa-hotbar', hidden: true });
+
+    // ── 输入区
     this.input = h('textarea', {
-      class: 'waa-input', rows: '1', 'aria-label': this.copy.input,
-      placeholder: this.copy.input
+      class: 'waa-input', rows: '1', 'aria-label': this.copy.input, placeholder: this.copy.input
     });
     this.input.addEventListener('input', function () { self._autosize(); });
     this.input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-        e.preventDefault();
-        self._submit();
-      }
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); self._submit(); }
     });
 
     this.sendBtn = h('button', {
       type: 'button', class: 'waa-send', 'aria-label': this.copy.send,
       onclick: function () { self._submit(); }
-    }, [h('span', { 'aria-hidden': 'true', text: '↑' })]);
-
-    this.headMeta = h('span', { class: 'waa-head__meta', text: this.copy.online });
+    }, [h('span', { 'aria-hidden': 'true' }, [icon(ICONS.send, 17)])]);
 
     this.panel = h('section', {
       class: 'waa-panel', role: 'dialog', 'aria-modal': 'false',
@@ -427,21 +766,12 @@
         h('span', { class: 'waa-head__pulse', 'aria-hidden': 'true' }),
         h('h2', { class: 'waa-head__name', text: this.opts.name }),
         this.headMeta,
-        h('button', {
-          type: 'button', class: 'waa-iconbtn waa-head__new',
-          'aria-label': this.copy.newChat, title: this.copy.newChat,
-          onclick: function () { self.reset(); }
-        }, [h('span', { 'aria-hidden': 'true', text: '↺' })]),
-        h('button', {
-          type: 'button', class: 'waa-iconbtn waa-head__close',
-          'aria-label': this.copy.close,
-          onclick: function () { self.close(); }
-        }, [h('span', { 'aria-hidden': 'true', text: '×' })])
+        this.btnNew, this.btnHistory, this.btnClose
       ]),
-      this.log,
+      h('div', { class: 'waa-body' }, [this.log, this.drawer]),
+      this.hotBar,
       h('form', { class: 'waa-compose', onsubmit: function (e) { e.preventDefault(); self._submit(); } }, [
-        this.input,
-        this.sendBtn
+        this.input, this.sendBtn
       ])
     ]);
 
@@ -449,15 +779,12 @@
     this.el.appendChild(this.panel);
 
     this._bindGlobal();
-    this._renderEmpty();
-    this._loadSession();
+    this._renderAll();
 
     var attach = function () { (document.body || document.documentElement).appendChild(host); };
     if (document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
-    this.built = true;
 
     this._injectStylesheet();
-
     if (this.opts.draggable) this._makeDraggable();
     if (this.opts.autoOpen) this.open();
 
@@ -468,44 +795,47 @@
       else if (mq.addListener) mq.addListener(onScheme);
     }
     this._syncTheme();
+
+    if (this.opts.hotWordsUrl) {
+      this._loadHotWords();
+      if (this.opts.hotWordsRefresh > 0) {
+        this._hotTimer = setInterval(function () { self._loadHotWords(); }, this.opts.hotWordsRefresh);
+      }
+    }
   };
 
   Widget.prototype._glyph = function () {
-    // 一个有缺角的方块 + 内部短横，避免和市面上千篇一律的聊天气泡撞脸
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    var svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '22');
-    svg.setAttribute('height', '22');
+    svg.setAttribute('width', '22'); svg.setAttribute('height', '22');
     svg.setAttribute('fill', 'none');
-    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', 'M4 5h11l5 5v9H4z');
-    path.setAttribute('stroke', 'currentColor');
-    path.setAttribute('stroke-width', '1.6');
-    path.setAttribute('stroke-linejoin', 'round');
-    var l1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    l1.setAttribute('d', 'M7.5 10.5h6M7.5 14h4');
-    l1.setAttribute('stroke', 'currentColor');
-    l1.setAttribute('stroke-width', '1.6');
-    l1.setAttribute('stroke-linecap', 'round');
-    svg.appendChild(path);
-    svg.appendChild(l1);
+    var outer = document.createElementNS(SVG_NS, 'path');
+    outer.setAttribute('d', 'M4 5h11l5 5v9H4z');
+    outer.setAttribute('stroke', 'currentColor');
+    outer.setAttribute('stroke-width', '1.6');
+    outer.setAttribute('stroke-linejoin', 'round');
+    var lines = document.createElementNS(SVG_NS, 'path');
+    lines.setAttribute('d', 'M7.5 10.5h6M7.5 14h4');
+    lines.setAttribute('stroke', 'currentColor');
+    lines.setAttribute('stroke-width', '1.6');
+    lines.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(outer); svg.appendChild(lines);
     return svg;
   };
+
+  /* ── 样式表 ───────────────────────────────────────────────── */
 
   Widget.prototype._injectStylesheet = function () {
     var self = this;
     if (this.opts.css) return;
     var url = this.opts.cssUrl || this._guessCssUrl();
     if (!url) {
-      // 打包后的 SPA 里 script.src 是带哈希的 bundle 名，猜不到同名 css。
-      // 静默降级会让人以为"挂件坏了"，所以这里必须出声。
       if (global.console && console.warn) {
         console.warn('[web-ai-assistant] 没能自动定位样式表，挂件会以无样式状态渲染。' +
           '请显式传入 cssUrl（例如 Vite: `import cssUrl from "./ai-assistant.css?url"`）或 css 字符串。');
       }
       return;
     }
-    // 优先 fetch 成 <style>：同步生效，不会有未样式化的闪烁
     fetch(url).then(function (r) {
       if (!r.ok) throw new Error('css ' + r.status);
       return r.text();
@@ -513,16 +843,12 @@
       if (self.localStyle) self.localStyle.textContent = css;
       else self.root.appendChild(h('style', { text: css }));
     }).catch(function () {
-      // file:// 或跨域下 fetch 会被拦，退化成 <link>
       self.root.appendChild(h('link', { rel: 'stylesheet', href: url }));
     });
   };
 
   Widget.prototype._guessCssUrl = function () {
     if (this.opts.cssUrl) return this.opts.cssUrl;
-    // document.currentScript 只有在"直接处于某个 <script> 执行中"才有值。
-    // 常见两种失灵：mount() 从内联脚本里调用（currentScript 是内联脚本、没有 src），
-    // 或从 load 回调里调用（currentScript 为 null）。两种都要退回去按文件名找。
     var s = document.currentScript;
     if (!s || !s.src) {
       var all = document.querySelectorAll('script[src*="ai-assistant"]');
@@ -536,9 +862,28 @@
   Widget.prototype._bindGlobal = function () {
     var self = this;
     this._onKey = function (e) {
-      if (e.key === 'Escape' && self.openState) self.close();
+      if (e.key !== 'Escape' || !self.openState) return;
+      if (self.drawerOpen) { self._closeDrawer(); return; }
+      if (self.opts.closeOnEsc === false) return;
+      self.close();
     };
     document.addEventListener('keydown', this._onKey);
+
+    // 点到挂件以外的任何地方就关上。
+    // Shadow DOM 会把内部点击的 target 重定向成宿主元素，所以 contains 判断是准的。
+    this._onDocPointerDown = function (e) {
+      if (!self.openState || self.opts.closeOnOutsideClick === false) return;
+      if (self.host.contains(e.target)) return;
+      var ignore = self.opts.outsideIgnore;
+      if (ignore && e.target && e.target.closest) {
+        var list = Array.isArray(ignore) ? ignore : [ignore];
+        for (var i = 0; i < list.length; i++) {
+          try { if (e.target.closest(list[i])) return; } catch (err) { /* 选择器写错就当没配 */ }
+        }
+      }
+      self.close();
+    };
+    document.addEventListener('pointerdown', this._onDocPointerDown, true);
   };
 
   Widget.prototype._syncTheme = function () {
@@ -552,49 +897,74 @@
   Widget.prototype._autosize = function () {
     this.input.style.height = 'auto';
     this.input.style.height = Math.min(this.input.scrollHeight, 132) + 'px';
+    this._renderHotBar();
   };
+
+  /* ── 拖动 ─────────────────────────────────────────────────── */
 
   Widget.prototype._makeDraggable = function () {
     var self = this;
-    var storeKey = 'waa:pos';
-    try {
-      var saved = JSON.parse(localStorage.getItem(storeKey) || 'null');
-      if (saved) this._applyPos(saved);
-    } catch (e) { /* 忽略 */ }
+    var saved = this.store.state.ui && this.store.state.ui.launcherPos;
+    if (saved) this._applyPos(saved, true);
 
     var dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
-    this.launcher.addEventListener('pointerdown', function (e) {
+
+    function onDown(e) {
       if (e.button !== 0) return;
       dragging = true; moved = false;
       sx = e.clientX; sy = e.clientY;
       var r = self.launcher.getBoundingClientRect();
       ox = r.left; oy = r.top;
-      self.launcher.setPointerCapture(e.pointerId);
-    });
-    this.launcher.addEventListener('pointermove', function (e) {
+      // 这里千万不能 e.preventDefault()：在 pointerdown 上阻止默认行为会连带
+      // 掐掉随后的兼容性 click 事件，于是"点一下启动器"就再也打不开面板了。
+      // 拖动结束那次多余的 click 由 onUp 里的捕获监听吃掉。
+      try { self.launcher.setPointerCapture(e.pointerId); } catch (err) { /* 捕获失败也无所谓 */ }
+    }
+
+    // move / up 挂在 window 上而不是启动器自己：
+    // 指针一旦离开那个 52px 的方块，挂在元素上的监听就收不到事件了；
+    // setPointerCapture 在部分环境（含合成输入、某些移动端）并不可靠。
+    function onMove(e) {
       if (!dragging) return;
       var dx = e.clientX - sx, dy = e.clientY - sy;
-      if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return; // 抖动阈值：小于 4px 仍视为点击
+      if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return; // 抖动阈值：<4px 仍算点击
       moved = true;
       self.launcher.classList.add('is-dragging');
       self._applyPos({ x: ox + dx, y: oy + dy });
-    });
-    this.launcher.addEventListener('pointerup', function (e) {
+    }
+
+    function onUp(e) {
       if (!dragging) return;
       dragging = false;
       self.launcher.classList.remove('is-dragging');
       try { self.launcher.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
-      if (moved) {
-        var r = self.launcher.getBoundingClientRect();
-        try { localStorage.setItem(storeKey, JSON.stringify({ x: r.left, y: r.top })); } catch (err) { /* 忽略 */ }
-        // 拖动结束后抑制掉这次 click，否则会顺手把面板打开
-        var stop = function (ev) { ev.stopPropagation(); ev.preventDefault(); self.launcher.removeEventListener('click', stop, true); };
-        self.launcher.addEventListener('click', stop, true);
-      }
-    });
+      if (!moved) return;
+      var r = self.launcher.getBoundingClientRect();
+      self.store.state.ui = self.store.state.ui || {};
+      self.store.state.ui.launcherPos = { x: r.left, y: r.top };
+      self.store.save();
+      // 拖动结束时浏览器还会补一次 click，要吃掉它，否则会顺手把面板打开
+      var stop = function (ev) {
+        ev.stopPropagation(); ev.preventDefault();
+        self.launcher.removeEventListener('click', stop, true);
+      };
+      self.launcher.addEventListener('click', stop, true);
+    }
+
+    this.launcher.addEventListener('pointerdown', onDown);
+    global.addEventListener('pointermove', onMove);
+    global.addEventListener('pointerup', onUp);
+    global.addEventListener('pointercancel', onUp);
+
+    this._teardownDrag = function () {
+      this.launcher.removeEventListener('pointerdown', onDown);
+      global.removeEventListener('pointermove', onMove);
+      global.removeEventListener('pointerup', onUp);
+      global.removeEventListener('pointercancel', onUp);
+    };
   };
 
-  Widget.prototype._applyPos = function (p) {
+  Widget.prototype._applyPos = function (p, silent) {
     var w = this.launcher.offsetWidth || 52, hh = this.launcher.offsetHeight || 52;
     var x = Math.max(8, Math.min(p.x, global.innerWidth - w - 8));
     var y = Math.max(8, Math.min(p.y, global.innerHeight - hh - 8));
@@ -604,13 +974,28 @@
     this.launcher.style.right = 'auto';
     this.launcher.style.bottom = 'auto';
     this.el.setAttribute('data-floating', '');
+    if (!silent) return;
   };
 
-  /* ── 消息渲染 ───────────────────────────────────────────── */
+  /* ── 渲染 ─────────────────────────────────────────────────── */
+
+  Widget.prototype._renderAll = function () {
+    this._renderThread();
+    this._renderHotBar();
+    if (this.drawerOpen) this._renderDrawer();
+  };
+
+  Widget.prototype._renderThread = function () {
+    var self = this;
+    this.log.textContent = '';
+    var msgs = this.thread.messages;
+    if (!msgs.length) { this._renderEmpty(); return; }
+    msgs.forEach(function (m, i) { self._renderMessage(m, i); });
+    this._scroll();
+  };
 
   Widget.prototype._renderEmpty = function () {
     var self = this;
-    this.log.textContent = '';
     var box = h('div', { class: 'waa-empty' });
     if (this.opts.greeting) {
       box.appendChild(h('p', { class: 'waa-empty__greeting', text: this.opts.greeting }));
@@ -626,37 +1011,85 @@
       });
       box.appendChild(wrap);
     }
+    if (this._showHot('empty') && this.hot.length) {
+      box.appendChild(this._hotBlock());
+    }
     this.log.appendChild(box);
   };
 
-  Widget.prototype._append = function (role, content) {
+  Widget.prototype._renderMessage = function (m, index) {
+    var self = this;
+    if (m.error) {
+      var enode = h('div', { class: 'waa-msg waa-msg--error' }, [
+        h('div', { class: 'waa-msg__rule' }),
+        h('div', { class: 'waa-msg__body' }, [
+          h('p', { class: 'waa-error__text', text: m.error }),
+          h('button', {
+            type: 'button', class: 'waa-retry', text: this.copy.retry,
+            onclick: function () {
+              self.thread.messages.splice(index, 1);
+              self.store.save();
+              self._renderThread();
+              self._run();
+            }
+          })
+        ])
+      ]);
+      this.log.appendChild(enode);
+      return enode;
+    }
+
+    var node = h('div', { class: 'waa-msg waa-msg--' + m.role });
+    if (m.role === 'assistant') node.appendChild(h('div', { class: 'waa-msg__rule' }));
+    var body = h('div', { class: 'waa-msg__body' });
+    if (m.role === 'assistant') body.innerHTML = renderMarkdown(m.content || '');
+    else body.textContent = m.content || '';
+    node.appendChild(body);
+
+    // 参考资料（RAG 命中）
+    if (m.role === 'assistant' && m.references && m.references.length) {
+      body.appendChild(this._refsBlock(m.references));
+    }
+    if (m.stopped) node.classList.add('is-stopped');
+    this.log.appendChild(node);
+    return { node: node, body: body };
+  };
+
+  Widget.prototype._refsBlock = function (refs) {
+    var list = h('ul', { class: 'waa-refs__list', hidden: true });
+    refs.forEach(function (r) {
+      var li = h('li', { class: 'waa-refs__item' });
+      if (r.url) {
+        li.appendChild(h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer', text: r.title || r.url }));
+      } else {
+        li.appendChild(h('span', { class: 'waa-refs__title', text: r.title || '参考资料' }));
+      }
+      if (r.snippet) li.appendChild(h('span', { class: 'waa-refs__snippet', text: r.snippet }));
+      list.appendChild(li);
+    });
+    var toggle = h('button', {
+      type: 'button', class: 'waa-refs__toggle',
+      'aria-expanded': 'false',
+      text: this.copy.refs + ' · ' + refs.length,
+      onclick: function () {
+        var open = list.hidden;
+        list.hidden = !open;
+        this.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+    });
+    return h('div', { class: 'waa-refs' }, [toggle, list]);
+  };
+
+  Widget.prototype._appendStreaming = function () {
     var empty = this.log.querySelector('.waa-empty');
     if (empty) empty.remove();
-    var node = h('div', { class: 'waa-msg waa-msg--' + role });
-    if (role === 'assistant') node.appendChild(h('div', { class: 'waa-msg__rule' }));
+    var node = h('div', { class: 'waa-msg waa-msg--assistant is-streaming' });
+    node.appendChild(h('div', { class: 'waa-msg__rule' }));
     var body = h('div', { class: 'waa-msg__body' });
-    if (role === 'assistant') body.innerHTML = renderMarkdown(content || '');
-    else body.textContent = content || '';
     node.appendChild(body);
     this.log.appendChild(node);
     this._scroll();
     return { node: node, body: body };
-  };
-
-  Widget.prototype._appendError = function (message) {
-    var self = this;
-    var node = h('div', { class: 'waa-msg waa-msg--error' }, [
-      h('div', { class: 'waa-msg__rule' }),
-      h('div', { class: 'waa-msg__body' }, [
-        h('p', { class: 'waa-error__text', text: message }),
-        h('button', {
-          type: 'button', class: 'waa-retry', text: this.copy.retry,
-          onclick: function () { node.remove(); self._resend(); }
-        })
-      ])
-    ]);
-    this.log.appendChild(node);
-    this._scroll();
   };
 
   Widget.prototype._scroll = function () {
@@ -670,40 +1103,186 @@
     else this.headMeta.removeAttribute('data-kind');
   };
 
-  /* ── 会话 ───────────────────────────────────────────────── */
+  /* ── 热词 ─────────────────────────────────────────────────── */
 
-  Widget.prototype._sessionKey = function () { return this.opts.sessionKey; };
-
-  Widget.prototype._saveSession = function () {
-    if (!this.opts.persist) return;
-    try { sessionStorage.setItem(this._sessionKey(), JSON.stringify(this.messages.slice(-40))); }
-    catch (e) { /* 隐私模式会抛错，忽略 */ }
+  Widget.prototype._showHot = function (where) {
+    var p = this.opts.hotWordsPlacement;
+    if (p === 'off' || !p) return false;
+    if (p === 'both') return true;
+    return p === where;
   };
 
-  Widget.prototype._loadSession = function () {
-    if (!this.opts.persist) return;
-    var raw;
-    try { raw = sessionStorage.getItem(this._sessionKey()); } catch (e) { return; }
-    if (!raw) return;
-    var msgs;
-    try { msgs = JSON.parse(raw); } catch (e) { return; }
-    if (!Array.isArray(msgs) || !msgs.length) return;
-    this.messages = msgs;
+  Widget.prototype._hotBlock = function () {
     var self = this;
-    var empty = this.log.querySelector('.waa-empty');
-    if (empty) empty.remove();
-    msgs.forEach(function (m) { self._append(m.role, m.content); });
+    var list = h('div', { class: 'waa-hot__list' });
+    this.hot.slice(0, 8).forEach(function (w) {
+      list.appendChild(h('button', {
+        type: 'button', class: 'waa-hot__item',
+        onclick: function () { self.send(w.text); }
+      }, [
+        h('span', { text: w.text }),
+        w.weight ? h('span', { class: 'waa-hot__n', text: String(w.weight) }) : null
+      ]));
+    });
+    return h('div', { class: 'waa-hot' }, [
+      h('span', { class: 'waa-hot__label', text: this.copy.hot }),
+      list
+    ]);
   };
 
-  Widget.prototype.reset = function () {
-    this.messages = [];
-    try { sessionStorage.removeItem(this._sessionKey()); } catch (e) { /* 忽略 */ }
-    this._renderEmpty();
-    this._setHeadMeta(this.copy.online);
-    this.input.focus();
+  Widget.prototype._renderHotBar = function () {
+    if (!this.hotBar) return;
+    var show = this._showHot('composer') && this.hot.length &&
+      (!this.input || this.input.value.trim() === '');
+    this.hotBar.hidden = !show;
+    if (!show) { this.hotBar.textContent = ''; return; }
+    this.hotBar.textContent = '';
+    this.hotBar.appendChild(this._hotBlock());
   };
 
-  /* ── 发送 ───────────────────────────────────────────────── */
+  Widget.prototype.setHotWords = function (list) {
+    this.hot = normalizeHot(list);
+    this._renderHotBar();
+    if (!this.thread.messages.length) this._renderThread();
+    return this.hot;
+  };
+
+  Widget.prototype._loadHotWords = function () {
+    var self = this;
+    fetch(this.opts.hotWordsUrl).then(function (r) { return r.json(); }).then(function (data) {
+      var items = Array.isArray(data) ? data : (data.items || data.words || data.hot || []);
+      if (!items || !items.length) return;
+      self.hot = normalizeHot(items);
+      self._renderHotBar();
+      if (!self.thread.messages.length) self._renderThread();
+    }).catch(function () { /* 拉不到就用静态的，不打扰用户 */ });
+  };
+
+  function normalizeHot(list) {
+    if (!list) return [];
+    return (Array.isArray(list) ? list : []).map(function (x) {
+      if (typeof x === 'string') return { text: x, weight: 0 };
+      return {
+        text: String(x.text || x.word || x.name || x.query || ''),
+        weight: Number(x.weight || x.count || x.n || 0) || 0
+      };
+    }).filter(function (x) { return x.text; });
+  }
+
+  /* ── 历史抽屉 ─────────────────────────────────────────────── */
+
+  Widget.prototype._toggleDrawer = function () {
+    this.drawerOpen ? this._closeDrawer() : this._openDrawer();
+  };
+
+  Widget.prototype._openDrawer = function () {
+    this.drawerOpen = true;
+    this._renderDrawer();
+    this.drawer.hidden = false;
+    this.el.classList.add('is-drawer');
+    this.btnHistory.setAttribute('aria-expanded', 'true');
+  };
+
+  Widget.prototype._closeDrawer = function () {
+    this.drawerOpen = false;
+    this.drawer.hidden = true;
+    this.el.classList.remove('is-drawer');
+    this.btnHistory.setAttribute('aria-expanded', 'false');
+  };
+
+  Widget.prototype._renderDrawer = function () {
+    var self = this;
+    this.drawer.textContent = '';
+
+    // 历史
+    this._sortThreads();
+    var threads = this.store.state.threads;
+    var list = h('ul', { class: 'waa-threads' });
+    threads.forEach(function (t) {
+      var active = t.id === self.thread.id;
+      list.appendChild(h('li', { class: 'waa-thread' + (active ? ' is-active' : '') }, [
+        h('button', {
+          type: 'button', class: 'waa-thread__open',
+          'aria-current': active ? 'true' : null,
+          onclick: function () { self.openThread(t.id); }
+        }, [
+          h('span', { class: 'waa-thread__title', text: self._titleOf(t) }),
+          h('span', { class: 'waa-thread__meta', text: relTime(t.updatedAt, self.copy) })
+        ]),
+        h('button', {
+          type: 'button', class: 'waa-thread__del',
+          'aria-label': self.copy.delete, title: self.copy.delete,
+          onclick: function (e) {
+            e.stopPropagation();
+            self.deleteThread(t.id);
+            if (self.drawerOpen) self._renderDrawer();
+          }
+        }, [icon(ICONS.trash, 13)])
+      ]));
+    });
+    if (!threads.length) list.appendChild(h('li', { class: 'waa-threads__none', text: '—' }));
+
+    this.drawer.appendChild(h('div', { class: 'waa-drawer__sec' }, [
+      h('div', { class: 'waa-drawer__head' }, [
+        h('span', { class: 'waa-drawer__title', text: this.copy.history }),
+        h('button', {
+          type: 'button', class: 'waa-drawer__act', text: this.copy.clearAll,
+          onclick: function () {
+            if (global.confirm && !global.confirm(self.copy.clearAll + '？')) return;
+            self.clearAll();
+            self._closeDrawer();
+          }
+        })
+      ]),
+      list
+    ]));
+
+    // 记忆
+    if (this.opts.memory) {
+      var keys = Object.keys(this.memory);
+      var body;
+      if (!keys.length) {
+        body = h('div', { class: 'waa-mem__empty', text: this.copy.memoryEmpty });
+      } else {
+        body = h('dl', { class: 'waa-mem' });
+        keys.forEach(function (k) {
+          body.appendChild(h('dt', { text: k }));
+          body.appendChild(h('dd', { text: String(self.memory[k]) }));
+        });
+      }
+      this.drawer.appendChild(h('div', { class: 'waa-drawer__sec' }, [
+        h('div', { class: 'waa-drawer__head' }, [
+          h('span', { class: 'waa-drawer__title', text: this.copy.memory }),
+          keys.length ? h('button', {
+            type: 'button', class: 'waa-drawer__act', text: this.copy.memoryClear,
+            onclick: function () { self.forget(); self._renderDrawer(); }
+          }) : null
+        ]),
+        body
+      ]));
+    }
+  };
+
+  function relTime(ts, copy) {
+    if (!ts) return '';
+    var d = Date.now() - ts;
+    if (d < 60000) return copy.justNow;
+    if (d < 3600000) return Math.floor(d / 60000) + 'm';
+    if (d < 86400000) return Math.floor(d / 3600000) + 'h';
+    if (d < 604800000) return Math.floor(d / 86400000) + 'd';
+    var dt = new Date(ts);
+    return (dt.getMonth() + 1) + '/' + dt.getDate();
+  }
+
+  /* ── 会话与记忆的落地 ─────────────────────────────────────── */
+
+  Widget.prototype._commit = function () {
+    this.thread.updatedAt = Date.now();
+    this._prune();
+    this.store.save();
+  };
+
+  /* ── 发送与流式 ───────────────────────────────────────────── */
 
   Widget.prototype._resolveTransport = function () {
     var t = this.opts.transport;
@@ -717,32 +1296,34 @@
     if (!v || this.busy) return;
     this.input.value = '';
     this._autosize();
-    this._append('user', v);
-    this.messages.push({ role: 'user', content: v });
-    this._saveSession();
+    this.thread.messages.push({ role: 'user', content: v });
+    this._renderThread();
+    this._commit();
     this._run();
   };
 
   Widget.prototype._submit = function () { this.send(); };
 
-  Widget.prototype._resend = function () {
-    if (this.busy) return;
-    if (!this.messages.length || this.messages[this.messages.length - 1].role !== 'user') return;
-    this._run();
-  };
-
   Widget.prototype._run = async function () {
     var self = this;
+    var history = this.thread.messages
+      .filter(function (m) { return !m.error; })
+      .map(function (m) { return { role: m.role, content: m.content }; });
+
     var ctx = {
-      messages: this.messages.slice(),
+      messages: this._memoryMessages().concat(history),
+      history: history,
+      memory: this.getMemory(),
+      knowledge: this.opts.knowledge || null,
       config: this.opts,
       signal: null,
-      onDelta: null
+      onDelta: null,
+      onReferences: null
     };
 
     if (typeof this.opts.onBeforeSend === 'function') {
       var proceed;
-      try { proceed = await this.opts.onBeforeSend({ messages: ctx.messages, config: this.opts }); }
+      try { proceed = await this.opts.onBeforeSend({ messages: ctx.messages, config: this.opts, memory: ctx.memory }); }
       catch (e) { proceed = true; }
       if (proceed === false) return;
     }
@@ -754,51 +1335,77 @@
     this.sendBtn.classList.add('is-stop');
     this.sendBtn.setAttribute('aria-label', this.copy.stop);
 
-    var target = this._append('assistant', '');
-    target.node.classList.add('is-streaming');
+    var target = this._appendStreaming();
     var acc = '';
-    var started = false;
+    var refs = [];
     ctx.onDelta = function (_delta, full) {
-      started = true;
       acc = full != null ? full : acc + _delta;
       target.body.innerHTML = renderMarkdown(acc);
       self._scroll();
     };
+    ctx.onReferences = function (list) {
+      if (list && list.length) refs = list;
+    };
 
     try {
-      var transport = this._resolveTransport();
-      var finalText = await transport(ctx);
-      if (finalText != null && finalText !== '' && !started) {
-        acc = finalText;
-        target.body.innerHTML = renderMarkdown(acc);
+      // 前端检索钩子：适合"知识库就在同源后端"的场景，省一次协议往返
+      if (typeof this.opts.retrieve === 'function' && !refs.length) {
+        var lastUser = history.filter(function (m) { return m.role === 'user'; }).slice(-1)[0];
+        if (lastUser) {
+          try {
+            var got = await this.opts.retrieve(lastUser.content, { messages: history });
+            if (Array.isArray(got) && got.length) { refs = got; ctx.onReferences(got); }
+          } catch (e) { /* 检索失败不该拦住对话 */ }
+        }
       }
-      if (!acc) acc = finalText || '';
+
+      var transport = this._resolveTransport();
+      var out = await transport(ctx);
+      var finalText = typeof out === 'string' ? out : (out && out.text) || '';
+      if (out && out.references && out.references.length) refs = out.references;
+
+      if (!acc) acc = finalText;
       target.node.classList.remove('is-streaming');
-      this.messages.push({ role: 'assistant', content: acc });
-      this._saveSession();
+      target.node.remove();
+
+      var msg = { role: 'assistant', content: acc };
+      if (refs.length) msg.references = refs;
+      this.thread.messages.push(msg);
+      this._renderThread();
+      this._commit();
       this._setHeadMeta(this.copy.online);
+
       if (typeof this.opts.onAfterSend === 'function') {
-        try { this.opts.onAfterSend({ messages: this.messages.slice(), reply: acc, config: this.opts }); }
-        catch (e) { /* 埋点失败不能影响体验 */ }
+        try {
+          this.opts.onAfterSend({
+            messages: this.thread.messages.slice(), reply: acc,
+            references: refs, config: this.opts, threadId: this.thread.id
+          });
+        } catch (e) { /* 埋点失败不能影响体验 */ }
       }
     } catch (err) {
       target.node.remove();
       if (err && err.name === 'AbortError') {
         if (acc) {
-          this.messages.push({ role: 'assistant', content: acc });
-          this._saveSession();
-          var stopped = this._append('assistant', acc);
-          stopped.node.classList.add('is-stopped');
+          var stopped = { role: 'assistant', content: acc, stopped: true };
+          if (refs.length) stopped.references = refs;
+          this.thread.messages.push(stopped);
+          this._renderThread();
+          this._commit();
         }
         this._setHeadMeta(this.copy.online);
       } else {
-        var msg = err && err.message ? err.message : '请求失败';
-        if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
-          msg = this.opts.locale === 'en' ? 'Network unreachable. Check the endpoint.' : '连不上服务，检查接口地址或网络。';
+        var msg2 = err && err.message ? err.message : '请求失败';
+        if (/Failed to fetch|NetworkError|Load failed/i.test(msg2)) {
+          msg2 = this.opts.locale === 'en' ? 'Network unreachable. Check the endpoint.' : '连不上服务，检查接口地址或网络。';
         }
-        this._appendError(msg);
+        this.thread.messages.push({ role: 'assistant', content: '', error: msg2 });
+        this._renderThread();
+        this._commit();
         this._setHeadMeta(this.copy.offline, 'error');
-        if (typeof this.opts.onError === 'function') { try { this.opts.onError(err); } catch (e) { /* 忽略 */ } }
+        if (typeof this.opts.onError === 'function') {
+          try { this.opts.onError(err); } catch (e) { /* 忽略 */ }
+        }
       }
     } finally {
       this.busy = false;
@@ -808,7 +1415,7 @@
     }
   };
 
-  /* ── 开关 ───────────────────────────────────────────────── */
+  /* ── 开关 ─────────────────────────────────────────────────── */
 
   Widget.prototype.open = function () {
     this.openState = true;
@@ -819,10 +1426,7 @@
     var badge = this.launcher.querySelector('.waa-launcher__badge');
     if (badge) badge.hidden = true;
     var self = this;
-    requestAnimationFrame(function () {
-      self.input.focus();
-      self._scroll();
-    });
+    requestAnimationFrame(function () { self.input.focus(); self._scroll(); });
   };
 
   Widget.prototype.close = function () {
@@ -831,20 +1435,41 @@
     this.el.classList.remove('is-open');
     this.launcher.setAttribute('aria-expanded', 'false');
     this.launcher.setAttribute('aria-label', this.copy.open);
+    this._closeDrawer();
     if (this.busy && this.abort) this.abort.abort();
   };
 
   Widget.prototype.toggle = function () { this.openState ? this.close() : this.open(); };
 
+  Widget.prototype.reset = function () { return this.newThread(); };
+
   Widget.prototype.destroy = function () {
     document.removeEventListener('keydown', this._onKey);
+    document.removeEventListener('pointerdown', this._onDocPointerDown, true);
+    if (this._hotTimer) clearInterval(this._hotTimer);
+    if (this._teardownDrag) this._teardownDrag();
     if (this.host && this.host.parentNode) this.host.parentNode.removeChild(this.host);
   };
 
-  /** 运行期更新业务上下文，下一次请求就会带上。 */
   Widget.prototype.setExtraInfo = function (info) {
-    this._extraInfo = info;
+    this.opts.extraInfo = info;
   };
+
+  /* ── 复制代码块（事件委托，避免每个块都挂监听） ───────────── */
+
+  function onCopyClick(e) {
+    var btn = e.target && e.target.closest && e.target.closest('.waa-code__copy');
+    if (!btn) return;
+    var code = btn.getAttribute('data-copy') || '';
+    var done = function () {
+      var old = btn.textContent;
+      btn.textContent = '已复制';
+      setTimeout(function () { btn.textContent = old; }, 1200);
+    };
+    if (global.navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(done, function () { /* 非安全上下文下静默失败 */ });
+    }
+  }
 
   /* ────────────────────────────────────────────────────────────
    * 对外接口
@@ -854,13 +1479,12 @@
 
   function mount(options) {
     var w = new Widget(options || {});
+    if (w.root && w.root.addEventListener) w.root.addEventListener('click', onCopyClick);
     instances.push(w);
     return w;
   }
 
-  function defineTransport(name, fn) {
-    transports[name] = fn;
-  }
+  function defineTransport(name, fn) { transports[name] = fn; }
 
   function autoMount() {
     var scripts = document.querySelectorAll('script[data-waa]');
@@ -879,18 +1503,29 @@
         appId: d.appId || '',
         cssUrl: d.cssUrl || '',
         greeting: d.greeting || '',
-        suggestions: d.suggestions ? d.suggestions.split('|').map(function (x) { return x.trim(); }).filter(Boolean) : [],
+        suggestions: splitList(d.suggestions),
+        hotWords: splitList(d.hotWords),
+        hotWordsUrl: d.hotWordsUrl || '',
+        hotWordsPlacement: d.hotWordsPlacement || DEFAULTS.hotWordsPlacement,
         theme: d.theme || DEFAULTS.theme,
         position: d.position || DEFAULTS.position,
         draggable: d.draggable !== 'false',
         autoOpen: d.autoOpen === 'true',
+        closeOnOutsideClick: d.closeOnOutsideClick !== 'false',
+        storage: d.storage || (d.persist === 'false' ? 'none' : (d.persist === 'true' ? 'local' : DEFAULTS.storage)),
+        history: d.history !== 'false',
+        memory: d.memory !== 'false',
         accent: d.accent || '',
         radius: d.radius || '',
-        zIndex: Number(d.zIndex) || DEFAULTS.zIndex,
-        persist: d.persist !== 'false'
+        zIndex: Number(d.zIndex) || DEFAULTS.zIndex
       });
       s.__waaInstance = w;
     }
+  }
+
+  function splitList(v) {
+    if (!v) return null;
+    return v.split('|').map(function (x) { return x.trim(); }).filter(Boolean);
   }
 
   if (document.readyState === 'loading') {
