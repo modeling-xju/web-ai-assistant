@@ -292,7 +292,8 @@
         if (/冲|萃|水温|研磨/.test(q)) widget.remember({ 关注点: '冲煮参数' });
         else if (/发货|物流|配送|多久/.test(q)) widget.remember({ 关注点: '配送时效' });
         else if (/价格|优惠|多少钱/.test(q)) widget.remember({ 关注点: '价格与优惠' });
-        else if (/推荐|哪支/.test(q)) widget.remember({ 关注点: '选购建议' });
+        else if (/推荐|哪支|怎么选/.test(q)) widget.remember({ 关注点: '选购建议' });
+        else if (/保存|存放|保鲜|受潮/.test(q)) widget.remember({ 关注点: '保存方式' });
       }
     }));
     if (open) widget.open();
