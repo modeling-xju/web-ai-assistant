@@ -100,6 +100,7 @@
   <label><input type="checkbox" id="draggable" checked> 可拖拽</label>
   <button id="toggle">打开 / 收起</button>
   <span class="sep"></span>
+  <button id="btnSetup">配置模型</button>
   <button id="btnKeys">快捷键</button>
   <button id="btnHistory">历史与记忆</button>
   <button id="btnNew">新对话</button>
@@ -162,6 +163,7 @@
       <li><strong>知识库引用</strong>：模拟的回复里带了检索到的资料，回复下方会出现可展开的「参考资料」。</li>
       <li><strong>快捷键</strong>：<code>Ctrl/⌘ + K</code> 开合助手，<code>Ctrl/⌘ + /</code> 打开快捷键表（挂件绑的和系统默认的都在里面），<code>Alt + ↑↓</code> 切会话，<code>↑</code> 在空输入框里取回上一条提问。焦点在页面顶部的搜索框里时这些键不会被抢走，<code>Ctrl+C/X/V/A/Z</code> 这类系统键挂件碰都不碰。</li>
       <li><strong>离线</strong>：把 DevTools 的 Network 调成 Offline（或拔网线），再问一句「怎么冲」——状态栏变成「离线」，它一个请求都不发就本地作答，并标上「离线应答」。问一个它没准备答案的，它会说明情况并记住，恢复联网后自动补发。</li>
+      <li><strong>配置模型</strong>：点「配置模型」（或标题栏的齿轮），选服务商、填你自己的 key，点「测试连接」会真的发一个最小请求过去验证。保存后立刻生效，不用刷新；「清除配置」回到演示模式。密钥只写进这台设备的浏览器——公开站点上请把 <code>setup</code> 关掉（默认就是关的）。</li>
     </ul>
   </div>
 </main>
@@ -283,6 +285,9 @@
     },
     storage: 'local',                  // 会话与记忆跨刷新保留
     storageKey: 'waa-demo',
+    // 演示页把配置面板打开，你可以当场选服务商、填自己的 key 试真模型。
+    // 公开站点上必须关掉它（默认就是关的），否则访客能往里填、也能看到配置入口。
+    setup: true,
     model: 'demo'
   };
 
@@ -321,6 +326,10 @@
   });
   document.getElementById('toggle').addEventListener('click', function () {
     widget.openState ? widget.close() : widget.open();
+  });
+  document.getElementById('btnSetup').addEventListener('click', function () {
+    if (!widget.openState) widget.open();
+    widget._openDrawer('setup');
   });
   document.getElementById('btnKeys').addEventListener('click', function () {
     if (!widget.openState) widget.open();

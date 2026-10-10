@@ -91,11 +91,15 @@ window.APPFLOW_CHAT_SDK.setExtraInfo({
 | "用户断网了怎么办" | `offline.answers` 配几条本地问答（命中即答、不发请求、标「离线应答」），答不了的给一句人话并在恢复联网后自动补发。见 `self-hosted-widget.md` 的「离线」 |
 | "要能按快捷键唤起" | 默认就有：`mod+K` 开合、`mod+/` 看快捷键表、`Alt+↑↓` 切会话。要改传 `hotkeys`，整块关掉传 `shortcuts: false`。**剪贴板那套（`mod+C/X/V/A/Z`）挂件不绑也不拦**——别去动它 |
 | "直接接某家大模型 API" | 用 `provider` 预设（OpenAI / 百炼 / DeepSeek / Kimi / GLM / SiliconFlow / OpenRouter / Ollama / vLLM / Anthropic）。**但先解决 key 放哪**——见下 |
+| "让我在界面上直接填 key 试一下" | `setup: true` 打开内置配置面板（选服务商 / 填 key / 测连接 / 保存即生效）。**这是本机或内网才开的东西**，公开站点必须保持默认的 `false` |
 
 **关于 provider：先问 key，再写代码。** 如果用户是在做公开网站，`provider` + `apiKey` 直接写在页面里等于把 key 公开。
 这时候正确的话术是："预设我可以用，但 key 得放后端，前端打你自己的接口"——然后给他后端代理的骨架
 （`self-hosted-widget.md` 的「后端代理」有 FastAPI / Node 两份）。
 只有本机开发、内网、或 Ollama 这类不需要 key 的场景，才可以直接连。
+
+**同理，`setup: true`（挂件内的配置面板）不要开在公开站点上。** 它默认就是关的，
+用户说"想在界面上直接填 key"时，先确认那是本机/内网场景再打开。
 
 动手写代码之前先确认这些确实不满足需求——把已有能力重写一遍是这条路上最常见的浪费。
 

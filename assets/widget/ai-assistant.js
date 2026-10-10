@@ -58,7 +58,9 @@
     list: ['M8 6h12', 'M8 12h12', 'M8 18h12', 'M4 6h.01', 'M4 12h.01', 'M4 18h.01'],
     close: ['M6 6l12 12', 'M18 6L6 18'],
     send: ['M12 19V5', 'M6 11l6-6 6 6'],
-    trash: ['M4 7h15', 'M9.5 7V5h5v2', 'M6.5 7l.9 12.5h9.2L17.5 7']
+    trash: ['M4 7h15', 'M9.5 7V5h5v2', 'M6.5 7l.9 12.5h9.2L17.5 7'],
+    // 用滑杆而不是齿轮：齿轮在 15px 下会糊成一个太阳，滑杆这个尺寸仍然认得出来
+    sliders: ['M4 8h8', 'M17 8h3', 'M4 16h3', 'M12 16h8', 'M15 5v6', 'M9 13v6']
   };
 
   function escapeHtml(s) {
@@ -515,6 +517,15 @@
       shortcutsNote: '站点自己的输入框里不会抢这些键。按 Esc 关闭。',
       nativeGroup: '输入框里用系统默认键（挂件不绑定、不拦截）',
       offlineLabel: '离线', offlineBadge: '离线应答', resending: '补发中',
+      setup: '配置模型', setupGear: '配置模型与密钥',
+      setupEmpty: '还没配置模型。点这里选一个服务商、填入密钥就能用。',
+      setupProvider: '服务商', setupProviderCustom: '自定义（手动填地址）',
+      setupKey: 'API Key', setupModel: '模型', setupEndpoint: '接口地址',
+      setupModelHint: '留空用服务商的默认模型', setupEndpointHint: '留空用服务商的默认地址',
+      setupTest: '测试连接', setupSave: '保存并应用', setupReset: '清除配置',
+      setupTesting: '正在测试…', setupOk: '连接正常', setupFail: '连接失败',
+      setupSaved: '已保存，立即生效', setupCleared: '已清除本机配置',
+      setupWarn: '密钥只存在这台设备的浏览器里。公开站点请关掉配置面板（setup: false），把密钥放到后端。',
       offlineFallback: '现在没有网络连接。这个问题我已经记下，联网后会自动补发。',
       offlineFallbackNoQueue: '现在没有网络连接，暂时没法回答这个问题。',
       copyBtn: '复制', copied: '已复制', copyFail: '复制失败', stopped: '已停止',
@@ -531,6 +542,15 @@
       shortcutsNote: 'These keys are not captured while typing in the site\u2019s own inputs. Press Esc to close.',
       nativeGroup: 'System keys inside the input (the widget neither binds nor intercepts them)',
       offlineLabel: 'Offline', offlineBadge: 'Offline answer', resending: 'Resending',
+      setup: 'Configure model', setupGear: 'Configure model and API key',
+      setupEmpty: 'No model configured yet. Pick a provider and paste a key to get started.',
+      setupProvider: 'Provider', setupProviderCustom: 'Custom (enter the URL yourself)',
+      setupKey: 'API key', setupModel: 'Model', setupEndpoint: 'Endpoint',
+      setupModelHint: 'Leave blank for the provider default', setupEndpointHint: 'Leave blank for the provider default',
+      setupTest: 'Test connection', setupSave: 'Save and apply', setupReset: 'Clear',
+      setupTesting: 'Testing…', setupOk: 'Connection OK', setupFail: 'Connection failed',
+      setupSaved: 'Saved and applied', setupCleared: 'Local config cleared',
+      setupWarn: 'The key is stored only in this browser. On a public site, turn the setup panel off (setup: false) and keep the key on your backend.',
       offlineFallback: 'No network right now. I\u2019ve kept your question and will send it once the connection is back.',
       offlineFallbackNoQueue: 'No network right now, so I can\u2019t answer this one yet.',
       copyBtn: 'Copy', copied: 'Copied', copyFail: 'Copy failed', stopped: 'Stopped',
@@ -808,6 +828,13 @@
     hotkeys: null,            // { toggle: 'mod+shift+k', … } 按动作名覆盖默认组合键
     shortcutHelp: true,       // 是否提供快捷键help面板
     offline: null,            // 见 OFFLINE_DEFAULTS
+    /**
+     * 在挂件里内置一个「选服务商 + 填 key + 测连接」的配置面板。
+     * 默认 **关**：公开站点上绝不能让访客看到它，更不能让 key 落进访客浏览器。
+     * 本机开发、内网工具、Electron 壳这类场景打开它，省掉改代码重启那一圈。
+     */
+    setup: false,
+    setupNote: '',            // 面板底部的自定义提示
 
     storage: 'session',       // session | local | none
     storageKey: 'waa',
@@ -846,6 +873,7 @@
   }
 
   function Widget(options) {
+    this._baseOptions = Object.assign({}, options || {});
     var raw = applyProvider(Object.assign({}, options || {}));
     this.opts = Object.assign({}, DEFAULTS, raw);
     // 兼容 v1 的 persist:false
@@ -855,6 +883,8 @@
     this.copy = COPY[this.opts.locale] || COPY.zh;
 
     this.store = new Store(this.opts);
+    // 面板里存下来的配置优先于代码里的：用户刚在界面上改过的东西，不该被刷新覆盖掉
+    this._applyStoredConfig();
     // offline 要单独深合并：Object.assign 会把整个对象换掉，用户只传 answers 时
     // enabled / queue 这些就会被抹成 undefined
     this.opts.offline = Object.assign({}, OFFLINE_DEFAULTS, this.opts.offline || {});
@@ -869,6 +899,125 @@
     this._ensureThread();
     this._build();
   }
+
+  /**
+   * 要不要显示配置入口。
+   *   setup: true    → 一直显示（本机开发、内网工具）
+   *   setup: 'auto'  → 只有"看起来还没配好"时才显示（provider 预设但没填 key）
+   *   setup: false   → 永不显示（公开站点，默认）
+   */
+  Widget.prototype._needsSetup = function () {
+    if (this.store.state.config) return false;
+    var t = this.opts.transport;
+    if (['openai', 'anthropic', 'dashscopeApp'].indexOf(t) === -1) return false;
+    if (!this.opts.endpoint) return true;
+    var keyless = this.opts.auth === 'none' || /localhost|127\.0\.0\.1/.test(this.opts.endpoint);
+    return !keyless && !this.opts.apiKey;
+  };
+
+  Widget.prototype._setupVisible = function () {
+    if (!this.opts.setup) return false;
+    return this.opts.setup === 'auto' ? this._needsSetup() : true;
+  };
+
+  /* ── 本机配置（setup 面板） ──────────────────────────────── */
+
+  var CONFIG_KEYS = ['provider', 'transport', 'endpoint', 'model', 'apiKey', 'appId', 'auth'];
+
+  Widget.prototype._applyStoredConfig = function () {
+    var cfg = this.store.state.config;
+    if (!cfg) return;
+    // 无论如何都合并：面板存过一次就代表用户明确表达过意图。
+    // （面板本身由 opts.setup 控制是否显示，跟这份配置要不要生效是两件事。）
+    var merged = applyProvider(Object.assign({}, cfg));
+    for (var i = 0; i < CONFIG_KEYS.length; i++) {
+      var k = CONFIG_KEYS[i];
+      if (merged[k]) this.opts[k] = merged[k];
+    }
+    this.opts.provider = merged.provider || this.opts.provider;
+    this.opts.providerLabel = merged.providerLabel || this.opts.providerLabel;
+  };
+
+  Widget.prototype.getConfig = function () {
+    var self = this;
+    var out = {};
+    CONFIG_KEYS.forEach(function (k) { if (self.opts[k]) out[k] = self.opts[k]; });
+    return out;
+  };
+
+  /** 应用一份新配置并持久化，立刻生效——不用刷新页面 */
+  Widget.prototype.setConfig = function (cfg) {
+    var merged = applyProvider(Object.assign({}, cfg || {}));
+    // 选"自定义"（没有预设）时 applyProvider 不会填 transport，
+    // 这里必须保留当前值，否则会把 transport 清成空串、挂件直接失灵
+    if (!merged.transport) merged.transport = this.opts.transport || DEFAULTS.transport;
+    for (var i = 0; i < CONFIG_KEYS.length; i++) {
+      var k = CONFIG_KEYS[i];
+      // 显式清成空串的字段要真的清掉，否则换了服务商还在用旧地址
+      this.opts[k] = merged[k] || '';
+    }
+    this.opts.provider = merged.provider || '';
+    this.opts.providerLabel = merged.providerLabel || '';
+    this.store.state.config = this.getConfig();
+    this.store.save();
+    this._syncProviderLabel();
+    return this.getConfig();
+  };
+
+  Widget.prototype.resetConfig = function () {
+    this.store.state.config = null;
+    this.store.save();
+    // 回到代码里传进来的那份配置
+    var base = applyProvider(Object.assign({}, this._baseOptions || {}));
+    var next = Object.assign({}, DEFAULTS, base);
+    for (var i = 0; i < CONFIG_KEYS.length; i++) {
+      var k = CONFIG_KEYS[i];
+      this.opts[k] = next[k] || '';
+    }
+    this.opts.provider = next.provider || '';
+    this._syncProviderLabel();
+    return this.getConfig();
+  };
+
+  /** 装配一份候选配置，供测试连接用 */
+  Widget.prototype._probe = function (cfg) {
+    var opts = applyProvider(Object.assign({}, this.opts, cfg));
+    var fn = typeof opts.transport === 'function' ? opts.transport : transports[opts.transport];
+    if (!fn) return Promise.reject(new Error('未知 transport：' + opts.transport));
+    if (!opts.endpoint) return Promise.reject(new Error('缺少接口地址'));
+
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, this.opts.setupTimeout || 20000);
+    var ctx = {
+      messages: [{ role: 'user', content: 'ping' }],
+      // 把回复压到最短，测试不该花钱
+      config: Object.assign({}, opts, {
+        body: Object.assign({ max_tokens: 8 }, opts.body || {}),
+        maxTokens: 8
+      }),
+      signal: ctrl ? ctrl.signal : null,
+      onDelta: function () {},
+      onReferences: function () {}
+    };
+    var self = this;
+    return Promise.resolve(fn(ctx)).then(function (r) {
+      clearTimeout(timer);
+      var text = typeof r === 'string' ? r : (r && r.text) || '';
+      if (!text) throw new Error('通了，但返回为空');
+      return text;
+    }, function (e) {
+      clearTimeout(timer);
+      if (e && e.name === 'AbortError') throw new Error('超时（' + ((self.opts.setupTimeout || 20000) / 1000) + 's）');
+      throw e;
+    });
+  };
+
+  Widget.prototype._syncProviderLabel = function () {
+    // 配置面板改过之后，标题栏的副标题跟着更新，不然用户不知道现在连的是哪家
+    if (this.headMeta && this.opts.providerLabel && this.opts.setup) {
+      this.headMeta.setAttribute('data-provider', this.opts.providerLabel);
+    }
+  };
 
   /* ── 线程 ─────────────────────────────────────────────────── */
 
@@ -1072,6 +1221,14 @@
       onclick: function () { self.close(); }
     }, [icon(ICONS.close)]);
 
+    // 配置面板的入口。setup 关着就整个不建，免得公开站点上多一个按钮被人点到。
+    this.btnSetup = this._setupVisible() ? h('button', {
+      type: 'button', class: 'waa-iconbtn', 'aria-label': this.copy.setupGear, title: this.copy.setupGear,
+      onclick: function () {
+        self._openDrawer(self.drawerOpen && self.drawerView === 'setup' ? 'main' : 'setup');
+      }
+    }, [icon(ICONS.sliders)]) : null;
+
     // ── 抽屉（历史 + 记忆）
     this.drawer = h('div', { class: 'waa-drawer', hidden: true });
 
@@ -1104,7 +1261,7 @@
         h('span', { class: 'waa-head__pulse', 'aria-hidden': 'true' }),
         h('h2', { class: 'waa-head__name', text: this.opts.name }),
         this.headMeta,
-        this.btnNew, this.btnHistory, this.btnClose
+        this.btnSetup, this.btnNew, this.btnHistory, this.btnClose
       ]),
       h('div', { class: 'waa-body' }, [this.log, this.drawer]),
       this.hotBar,
@@ -1450,6 +1607,20 @@
   Widget.prototype._renderEmpty = function () {
     var self = this;
     var box = h('div', { class: 'waa-empty' });
+
+    // 还没配好模型时，第一件事是让用户能配上，而不是给他看问候语
+    if (this.opts.setup === 'auto' && this._needsSetup()) {
+      box.appendChild(h('div', { class: 'waa-setup-card' }, [
+        h('p', { class: 'waa-setup-card__text', text: this.copy.setupEmpty }),
+        h('button', {
+          type: 'button', class: 'waa-btn waa-btn--primary', text: this.copy.setup,
+          onclick: function () { self._openDrawer('setup'); }
+        })
+      ]));
+      this.log.appendChild(box);
+      return;
+    }
+
     if (this.opts.greeting) {
       box.appendChild(h('p', { class: 'waa-empty__greeting', text: this.opts.greeting }));
     }
@@ -1649,7 +1820,118 @@
   Widget.prototype._renderDrawer = function () {
     this.drawer.textContent = '';
     if (this.drawerView === 'shortcuts') { this._renderShortcuts(); return; }
+    if (this.drawerView === 'setup') { this._renderSetup(); return; }
     this._renderHistoryAndMemory();
+  };
+
+  /* ── 配置面板 ─────────────────────────────────────────────── */
+
+  Widget.prototype._renderSetup = function () {
+    var self = this;
+    var en = this.opts.locale === 'en';
+    var cur = this.getConfig();
+
+    function field(label, input, hint) {
+      return h('label', { class: 'waa-field' }, [
+        h('span', { class: 'waa-field__label', text: label }),
+        input,
+        hint ? h('span', { class: 'waa-field__hint', text: hint }) : null
+      ]);
+    }
+
+    var providerSel = h('select', { class: 'waa-input-box waa-input-box--select' });
+    providerSel.appendChild(h('option', { value: '', text: this.copy.setupProviderCustom }));
+    Object.keys(PROVIDERS).forEach(function (k) {
+      providerSel.appendChild(h('option', { value: k, text: PROVIDERS[k].label + ' · ' + k }));
+    });
+    providerSel.value = cur.provider || '';
+
+    var keyInput = h('input', {
+      type: 'password', class: 'waa-input-box', autocomplete: 'off', spellcheck: 'false',
+      placeholder: 'sk-…', value: cur.apiKey || ''
+    });
+    var modelInput = h('input', {
+      type: 'text', class: 'waa-input-box', autocomplete: 'off', spellcheck: 'false',
+      placeholder: (PROVIDERS[cur.provider] || {}).model || '', value: cur.model || ''
+    });
+    var endpointInput = h('input', {
+      type: 'text', class: 'waa-input-box', autocomplete: 'off', spellcheck: 'false',
+      placeholder: (PROVIDERS[cur.provider] || {}).endpoint || '', value: cur.endpoint || ''
+    });
+
+    providerSel.addEventListener('change', function () {
+      var p = PROVIDERS[providerSel.value];
+      modelInput.placeholder = (p && p.model) || '';
+      endpointInput.placeholder = (p && p.endpoint) || '';
+    });
+
+    var status = h('div', { class: 'waa-setup__status', hidden: true });
+
+    function collect() {
+      return {
+        provider: providerSel.value,
+        apiKey: keyInput.value.trim(),
+        model: modelInput.value.trim(),
+        endpoint: endpointInput.value.trim()
+      };
+    }
+
+    function setStatus(text, kind) {
+      status.textContent = text;
+      status.hidden = false;
+      status.setAttribute('data-kind', kind || '');
+    }
+
+    var testBtn = h('button', {
+      type: 'button', class: 'waa-btn', text: this.copy.setupTest,
+      onclick: function () {
+        setStatus(self.copy.setupTesting, 'busy');
+        testBtn.disabled = true;
+        self._probe(collect()).then(function () {
+          setStatus(self.copy.setupOk, 'ok');
+        }, function (e) {
+          setStatus(self.copy.setupFail + '：' + (e && e.message ? e.message : e), 'error');
+        }).then(function () { testBtn.disabled = false; });
+      }
+    });
+
+    var saveBtn = h('button', {
+      type: 'button', class: 'waa-btn waa-btn--primary', text: this.copy.setupSave,
+      onclick: function () {
+        self.setConfig(collect());
+        setStatus(self.copy.setupSaved, 'ok');
+        self._renderThread();
+      }
+    });
+
+    var resetBtn = h('button', {
+      type: 'button', class: 'waa-btn', text: this.copy.setupReset,
+      onclick: function () {
+        self.resetConfig();
+        setStatus(self.copy.setupCleared, '');
+        self._renderSetup();
+        self._renderThread();
+      }
+    });
+
+    this.drawer.appendChild(h('div', { class: 'waa-drawer__sec' }, [
+      h('div', { class: 'waa-drawer__head' }, [
+        h('span', { class: 'waa-drawer__title', text: this.copy.setup }),
+        h('button', {
+          type: 'button', class: 'waa-drawer__act', text: this.copy.back,
+          onclick: function () { self._openDrawer('main'); }
+        })
+      ]),
+      h('div', { class: 'waa-form' }, [
+        field(this.copy.setupProvider, providerSel),
+        field(this.copy.setupKey, keyInput),
+        field(this.copy.setupModel, modelInput, en ? this.copy.setupModelHint : this.copy.setupModelHint),
+        field(this.copy.setupEndpoint, endpointInput, this.copy.setupEndpointHint)
+      ]),
+      status,
+      h('div', { class: 'waa-setup__actions' }, [testBtn, saveBtn, resetBtn]),
+      h('p', { class: 'waa-drawer__note', text: this.opts.setupNote || this.copy.setupWarn })
+    ]));
   };
 
   Widget.prototype._renderShortcuts = function () {
@@ -2159,6 +2441,7 @@
         closeOnOutsideClick: d.closeOnOutsideClick !== 'false',
         shortcuts: d.shortcuts !== 'false',
         offline: d.offline === 'false' ? { enabled: false } : null,
+        setup: d.setup === 'auto' ? 'auto' : (d.setup === 'true'),
         outsideIgnore: d.outsideIgnore || null,
         storage: d.storage || (d.persist === 'false' ? 'none' : (d.persist === 'true' ? 'local' : DEFAULTS.storage)),
         history: d.history !== 'false',

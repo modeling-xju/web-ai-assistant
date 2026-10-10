@@ -216,6 +216,8 @@ bundle 名，猜不到样式表，挂件就会以**无样式状态**渲染。这
 | `retrieve` | — | `async (query, {messages}) => [{title,url,snippet}]`。前端检索钩子，适合知识库就在同源后端的场景 |
 | `knowledge` | — | 知识库配置（`{id, name, topK, mode}`），会随请求下发给后端 |
 | `offline` | 见「离线」一节 | 断网时的本地问答与补发 |
+| `setup` | `false` | 是否在挂件里显示「配置模型」面板。`true` 常显 / `'auto'` 只在看起来没配好时显 / `false` 永不显示 |
+| `setupNote` | — | 配置面板底部的自定义提示（留空用内置的安全提示） |
 | `memory` | `true` | 是否启用记忆（持久化 + 随请求发送） || `memoryForward` | `'system'` | `'system'`：把记忆拼成一条 system 消息（兼容性最好）；`'body'`：作为 `memory` 字段放进请求体，给自研后端用 |
 | `memorySystem` | `true` | 是否用 system 消息承载记忆 |
 | `memoryPrompt` | 见源码 | 记忆那段 system 消息的开头语 |
@@ -379,6 +381,39 @@ WebAIAssistant.mount({ transport: 'anthropic', endpoint: '…', model: '…', ap
 后端只要把 `{messages}` 转成上游协议、把 SSE 原样转发回来即可，`transports.openai` 会自动解析。FastAPI / Node 两份现成实现见上面「后端代理」一节。
 
 从浏览器**直连** Anthropic 需要额外的 `anthropic-dangerous-direct-browser-access: true` 头（挂件在你传 `allowBrowserDirect: true` 时会自动带上），而且服务商普遍不建议这么做——同样请走后端代理。
+
+## 在挂件里配置模型（setup 面板）
+
+本机开发、内网工具、Electron 壳这类场景，可以让用户在挂件里直接选服务商、填 key、测连接，不用改代码重启：
+
+```js
+WebAIAssistant.mount({ setup: true });
+```
+
+面板里有四个字段——服务商（11 个预设 + 自定义）、API Key、模型、接口地址。选中服务商后，模型和地址的占位符会跟着变成该家的默认值，留空就用默认。「测试连接」会**真的发一个最小请求**过去（把回复压到 8 token，基本不花钱），成功显示「连接正常」，失败把上游的原因原样带回来——比如 `401 invalid api key`，用户照着就能改。保存后立刻生效，不用刷新；配置存在 `storageKey` 下，下次打开还在。
+
+程序里也能读写：
+
+```js
+widget.setConfig({ provider: 'deepseek', apiKey: 'sk-…' });  // 立即生效并持久化
+widget.getConfig();      // { provider, transport, endpoint, model, apiKey, auth }
+widget.resetConfig();    // 清掉本机配置，回到代码里传的那份
+```
+
+### ⚠ 公开站点上必须关掉它
+
+**默认就是关的**（`setup: false`），请不要为了"方便"在公开站点上打开。理由：
+
+- 访客会看到一个配置入口，点进去能填自己的 key——这不是你想要的交互。
+- 更要紧的是，一旦有 key 存在浏览器里（不管谁填的），它对这个域下的任何脚本都是可读的。
+
+`setup: 'auto'` 是个折中：只有检测到「用了服务商预设但没填 key」时才显示入口，并在空态里直接给一张"还没配置"的卡片。适合同一个页面既要在本机配、又要能发布的情况。
+
+生产环境的正确形态始终是：
+
+```
+浏览器  ──►  你自己的后端（key 在这里）  ──►  大模型 API
+```
 
 ## 离线
 

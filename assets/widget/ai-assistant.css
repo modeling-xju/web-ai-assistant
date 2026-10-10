@@ -820,6 +820,120 @@
 .waa-refs__title { font-weight: 600; }
 .waa-refs__snippet { color: var(--waa-muted); }
 
+/* ── 配置面板 ──────────────────────────────────────────────── */
+
+.waa-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.waa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.waa-field__label {
+  font-family: var(--waa-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--waa-muted);
+}
+
+.waa-field__hint { font-size: 11px; color: var(--waa-muted); }
+
+.waa-input-box {
+  width: 100%;
+  padding: 7px 9px;
+  font-family: var(--waa-mono);
+  font-size: 12px;
+  color: var(--waa-ink);
+  background: transparent;
+  border: 1px solid var(--waa-line-strong);
+  border-radius: var(--waa-radius);
+  outline: none;
+}
+
+.waa-input-box:focus { border-color: var(--waa-accent); }
+.waa-input-box::placeholder { color: var(--waa-muted); }
+
+.waa-input-box--select {
+  font-family: var(--waa-font);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.waa-setup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.waa-btn {
+  padding: 6px 12px;
+  font-family: var(--waa-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--waa-ink);
+  background: transparent;
+  border: 1px solid var(--waa-line-strong);
+  border-radius: var(--waa-radius);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.waa-btn:hover:not(:disabled) {
+  color: var(--waa-bg);
+  background: var(--waa-ink);
+  border-color: var(--waa-ink);
+}
+
+.waa-btn:disabled { opacity: 0.45; cursor: default; }
+
+.waa-btn--primary {
+  color: var(--waa-bg);
+  background: var(--waa-ink);
+  border-color: var(--waa-ink);
+}
+
+.waa-btn--primary:hover:not(:disabled) {
+  background: var(--waa-accent);
+  border-color: var(--waa-accent);
+}
+
+.waa-setup__status {
+  margin-top: 12px;
+  padding: 7px 10px;
+  font-family: var(--waa-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--waa-muted);
+  border-left: 2px solid var(--waa-line-strong);
+  overflow-wrap: anywhere;
+}
+
+.waa-setup__status[hidden] { display: none; }
+.waa-setup__status[data-kind="ok"] { border-left-color: #2f7d4f; color: #2f7d4f; }
+.waa-setup__status[data-kind="error"] { border-left-color: var(--waa-accent); color: var(--waa-accent); }
+.waa-setup__status[data-kind="busy"] { border-left-color: var(--waa-accent); }
+
+/* 空态里的"还没配置"卡片 */
+.waa-setup-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--waa-line-strong);
+  border-radius: var(--waa-radius);
+}
+
+.waa-setup-card__text { font-size: 13px; line-height: 1.6; color: var(--waa-muted); }
+
 /* ── 响应式 ────────────────────────────────────────────────── */
 
 @media (max-width: 520px) {

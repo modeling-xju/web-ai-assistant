@@ -78,7 +78,7 @@
 
 ## 挂件带什么
 
-点面板外面收起、多会话历史、跨访问的记忆、热词、知识库引用、离线兜底、11 家大模型 API 预设。这些是配置项，不是要你写的代码。
+点面板外面收起、多会话历史、跨访问的记忆、热词、知识库引用、离线兜底、11 家大模型 API 预设，以及一个可选的「在界面上选服务商填 key」面板。这些是配置项，不是要你写的代码。
 
 **记忆**是持久化的，每次请求会拼成一条 system 消息带上。用法：
 
@@ -121,6 +121,10 @@ WebAIAssistant.mount({ provider: 'deepseek', apiKey: '…' });
 ```
 
 **上面这行只适合本机开发、内网、或 Ollama。** 公开站点上任何访客按 F12 就能拿到 key。生产环境走 `浏览器 → 你自己的后端（key 在这里）→ 大模型 API`，后端只把 `{messages}` 转成上游协议、SSE 原样转发回来即可。FastAPI 和 Node 两份实现见 `references/self-hosted-widget.md`。
+
+**在界面上直接配。** 打开 `setup: true`，挂件里会多一个齿轮：选服务商、填 key、点「测试连接」（真的发一个最小请求过去验证），保存立刻生效、不用刷新。本机开发、内网工具、给同事试用时很省事。
+
+**它是默认关的**（`setup: false`），别在公开站点上打开——访客会看到一个配置入口，而且只要浏览器里存过 key，这个域下任何脚本都能读到。居中一点的选法是 `setup: 'auto'`：只有检测到「用了服务商预设但没填 key」时才显示入口。演示页就开着它，你可以当场填自己的 key 试真模型。
 
 ## 校验器
 
@@ -225,7 +229,7 @@ Rebind with `hotkeys: { toggle: 'mod+shift+k' }`, or turn the whole set off with
 
 ## What the widget ships with
 
-Click-outside to collapse, multiple conversations, persistent memory, hot words, knowledge-base citations, offline fallbacks, and eleven LLM provider presets. All of it is configuration, not code you have to write.
+Click-outside to collapse, multiple conversations, persistent memory, hot words, knowledge-base citations, offline fallbacks, eleven LLM provider presets, and an optional in-widget provider/key setup panel. All of it is configuration, not code you have to write.
 
 **Memory** is persisted and rides along as a system message on every request:
 
@@ -268,6 +272,10 @@ WebAIAssistant.mount({ provider: 'deepseek', apiKey: '…' });
 ```
 
 **That line only suits local development, an intranet, or Ollama.** On a public site anyone can hit F12 and take the key. In production: `browser → your own backend (key lives here) → the LLM API`. The backend just translates `{messages}` into the upstream protocol and passes the SSE frames back through. Both a FastAPI and a Node implementation are in `references/self-hosted-widget.md`.
+
+**Or configure it in the UI.** Turn on `setup: true` and the widget grows a gear: pick a provider, paste a key, hit "Test connection" (it really fires a minimal request to check), and the change applies immediately without a reload. Handy for local work, internal tools, and letting a colleague try it.
+
+**It's off by default** (`setup: false`) — don't turn it on for a public site. Visitors would see a config entry point, and once a key is in the browser, any script on that origin can read it. `setup: 'auto'` is the middle ground: the entry point only appears when the widget detects a provider preset with no key. The live demo has it on, so you can paste your own key and try a real model.
 
 ## Checker
 
