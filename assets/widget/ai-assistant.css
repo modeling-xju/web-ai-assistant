@@ -405,6 +405,18 @@
 
 .waa-keys__label { font-size: 13px; color: var(--waa-ink); }
 
+/* 系统默认键那一组的分隔标题 */
+.waa-keys__group {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--waa-line);
+  font-family: var(--waa-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+  color: var(--waa-muted);
+}
+
 .waa-drawer__note {
   margin-top: 16px;
   padding-top: 10px;

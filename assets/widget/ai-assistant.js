@@ -509,7 +509,7 @@
       newChat: '新对话', history: '历史记录', hot: '热词',
       shortcuts: '快捷键', back: '返回',
       shortcutsNote: '站点自己的输入框里不会抢这些键。按 Esc 关闭。',
-      nativeNote: '复制 / 粘贴 / 剪切 / 全选 / 撤销用的是系统默认快捷键，在输入框里照常可用——挂件不碰这些键。',
+      nativeGroup: '输入框里用系统默认键（挂件不绑定、不拦截）',
       memory: '记忆', memoryEmpty: '还没有记住任何信息',
       memoryClear: '清空记忆', clearAll: '清空全部', refs: '参考资料',
       emptyTitle: '新对话', untitled: '新对话', delete: '删除', justNow: '刚刚'
@@ -521,7 +521,7 @@
       newChat: 'New chat', history: 'History', hot: 'Trending',
       shortcuts: 'Shortcuts', back: 'Back',
       shortcutsNote: 'These keys are not captured while typing in the site\u2019s own inputs. Press Esc to close.',
-      nativeNote: 'Copy / paste / cut / select-all / undo use the OS defaults and keep working in the input box — the widget never touches those keys.',
+      nativeGroup: 'System keys inside the input (the widget neither binds nor intercepts them)',
       memory: 'Memory', memoryEmpty: 'Nothing remembered yet',
       memoryClear: 'Clear memory', clearAll: 'Clear all', refs: 'Sources',
       emptyTitle: 'New chat', untitled: 'New chat', delete: 'Delete', justNow: 'just now'
@@ -642,6 +642,20 @@
     { id: 'newline',   combo: 'shift+enter',   scope: 'input',  zh: '换行',                   en: 'New line' },
     { id: 'sendAny',   combo: 'mod+enter',     scope: 'input',  zh: '发送（任何情况下）',      en: 'Send (always)' },
     { id: 'editLast',  combo: 'arrowup',       scope: 'input',  zh: '取回上一条提问（输入框为空时）', en: 'Recall last question (empty input)' }
+  ];
+
+  /**
+   * 输入框里的系统默认键。挂件既不绑定也不拦截它们，
+   * 这里只负责"列出来让用户知道它们还在"——用户看不到，就会以为被挂件吃掉了。
+   */
+  var NATIVE_KEYS = [
+    { combo: 'mod+c', zh: '复制选中的内容', en: 'Copy' },
+    { combo: 'mod+x', zh: '剪切', en: 'Cut' },
+    { combo: 'mod+v', zh: '粘贴', en: 'Paste' },
+    { combo: 'mod+a', zh: '全选输入框内容', en: 'Select all' },
+    { combo: 'mod+z', zh: '撤销', en: 'Undo' },
+    { combo: 'mod+shift+z', zh: '重做', en: 'Redo' },
+    { combo: 'mod+f', zh: '页内查找（浏览器自己的）', en: 'Find in page (the browser\u2019s own)' }
   ];
 
   function parseCombo(s) {
@@ -1605,13 +1619,17 @@
   Widget.prototype._renderShortcuts = function () {
     var self = this;
     var en = this.opts.locale === 'en';
-    var rows = h('dl', { class: 'waa-keys' });
-    this._shortcutList().forEach(function (s) {
-      var combo = h('dt', { class: 'waa-keys__combo' });
-      fmtCombo(s.combo).forEach(function (k) { combo.appendChild(h('kbd', { text: k })); });
-      rows.appendChild(combo);
-      rows.appendChild(h('dd', { class: 'waa-keys__label', text: en ? s.en : s.zh }));
-    });
+
+    function keyTable(rows) {
+      var dl = h('dl', { class: 'waa-keys' });
+      rows.forEach(function (r) {
+        var combo = h('dt', { class: 'waa-keys__combo' });
+        fmtCombo(r.combo).forEach(function (k) { combo.appendChild(h('kbd', { text: k })); });
+        dl.appendChild(combo);
+        dl.appendChild(h('dd', { class: 'waa-keys__label', text: en ? r.en : r.zh }));
+      });
+      return dl;
+    }
 
     this.drawer.appendChild(h('div', { class: 'waa-drawer__sec' }, [
       h('div', { class: 'waa-drawer__head' }, [
@@ -1621,9 +1639,10 @@
           onclick: function () { self._openDrawer('main'); }
         })
       ]),
-      rows,
-      h('p', { class: 'waa-drawer__note', text: this.copy.shortcutsNote }),
-      h('p', { class: 'waa-drawer__note waa-drawer__note--quiet', text: this.copy.nativeNote })
+      keyTable(this._shortcutList()),
+      h('div', { class: 'waa-keys__group', text: this.copy.nativeGroup }),
+      keyTable(NATIVE_KEYS),
+      h('p', { class: 'waa-drawer__note', text: this.copy.shortcutsNote })
     ]));
   };
 
